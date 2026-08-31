@@ -1,0 +1,28 @@
+From: Accounts Payable Notification <billing@supplier-logistics-portal.com>
+To: accounting@corporate-target.com
+Subject: OVERDUE INVOICE: Final Notice for Statement INV-2026-88910
+Date: Fri, 29 Aug 2026 14:00:00 +0000
+Message-ID: <invoice-bill-77491@supplier-logistics-portal.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="====BOUNDARY_12345===="
+
+--====BOUNDARY_12345====
+Content-Type: text/plain; charset=UTF-8
+
+Dear Customer,
+
+Please find attached your overdue remittance statement INV-2026-88910.
+Ensure payment is settled immediately to avoid service suspension.
+
+Regards,
+Supplier Billing Team
+
+--====BOUNDARY_12345====
+Content-Type: application/x-msdownload
+Content-Disposition: attachment; filename="Overdue_Invoice_Statement_2026.pdf.vbs"
+Content-Transfer-Encoding: base64
+
+J21hbGljaW91cyB2YnNjcmlwdCB0cm9qYW4gcGF5bG9hZCBmb3JlbnNpYyB0ZXN0aW5nCm1z
+Z2JveCAiVHJvamFuIHBheWxvYWQi
+
+--====BOUNDARY_12345====--

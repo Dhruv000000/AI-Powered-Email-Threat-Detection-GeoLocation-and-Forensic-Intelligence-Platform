@@ -1,0 +1,26 @@
+From: Sarah Jenkins <sarah.jenkins@enterprise-solutions.com>
+To: Dhruv Sharma <dhruv.sharma@cyberdefense.gov.in>
+Subject: Q3 Threat Intel Briefing Schedule & Agenda
+Date: Fri, 29 Aug 2026 09:30:00 +0000
+Message-ID: <briefing-20260829-01@enterprise-solutions.com>
+Return-Path: <sarah.jenkins@enterprise-solutions.com>
+Received-SPF: pass (google.com: domain of sarah.jenkins@enterprise-solutions.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@enterprise-solutions.com;
+       spf=pass (google.com: domain of sarah.jenkins@enterprise-solutions.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=sarah.jenkins@enterprise-solutions.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=enterprise-solutions.com
+Received: from mail-relay.enterprise-solutions.com (mail-relay.enterprise-solutions.com [209.85.220.41])
+        by mx.google.com with ESMTPS id abc123def456
+        for <dhruv.sharma@cyberdefense.gov.in>;
+        Fri, 29 Aug 2026 09:30:02 +0000 (UTC)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+Hi Dhruv,
+
+Attached is the agenda for our quarterly threat intelligence briefing scheduled for next Tuesday at 14:00 UTC. 
+Please let me know if you would like to add any case telemetry items before we finalize the presentation.
+
+Best regards,
+Sarah Jenkins
+Enterprise Solutions DFIR Group
