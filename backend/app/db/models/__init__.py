@@ -20,6 +20,8 @@ from app.db.models.investigation import (
     InvestigationAuditLogModel,
 )
 
+from app.db.models.remediation import RemediationExecutionLog
+
 __all__ = [
     "EmailAnalysisModel",
     "EmailMetadataModel",
@@ -38,4 +40,5 @@ __all__ = [
     "InvestigationEntityRefModel",
     "InvestigationRelationshipRefModel",
     "InvestigationAuditLogModel",
+    "RemediationExecutionLog",
 ]

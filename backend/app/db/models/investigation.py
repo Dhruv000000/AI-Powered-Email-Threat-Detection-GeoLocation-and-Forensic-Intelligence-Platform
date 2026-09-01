@@ -80,6 +80,9 @@ class Investigation(Base):
     audit_logs: Mapped[List["InvestigationAuditLogModel"]] = relationship(
         "InvestigationAuditLogModel", back_populates="investigation", cascade="all, delete-orphan", order_by="InvestigationAuditLogModel.timestamp"
     )
+    remediation_logs: Mapped[List["RemediationExecutionLog"]] = relationship(  # noqa: F821
+        "RemediationExecutionLog", back_populates="investigation", cascade="all, delete-orphan", order_by="RemediationExecutionLog.executed_at"
+    )
 
 
 # Backward-compatible alias

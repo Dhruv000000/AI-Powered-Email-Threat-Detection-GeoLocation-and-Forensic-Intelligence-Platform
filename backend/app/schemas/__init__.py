@@ -56,6 +56,13 @@ from app.schemas.report import (
     ExecutiveSummaryDTO,
     DFIRReportDTO,
 )
+from app.schemas.remediation import (
+    RemediationExecuteRequest,
+    RemediationBatchRequest,
+    RemediationExecutionResponse,
+    RemediationHistoryResponse,
+    STIXBundleDTO,
+)
 
 __all__ = [
     "EmailMetadataSchema",
@@ -105,4 +112,9 @@ __all__ = [
     "IoCItemDTO",
     "ExecutiveSummaryDTO",
     "DFIRReportDTO",
+    "RemediationExecuteRequest",
+    "RemediationBatchRequest",
+    "RemediationExecutionResponse",
+    "RemediationHistoryResponse",
+    "STIXBundleDTO",
 ]

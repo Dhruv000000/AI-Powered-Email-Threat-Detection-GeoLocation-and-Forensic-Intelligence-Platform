@@ -37,8 +37,17 @@ from app.services.investigation.paths_engine import ThreatPathEngine
 from app.services.investigation.threat_map_service import ThreatMapService
 from app.schemas.geo import ThreatMapResponse
 from app.schemas.report import DFIRReportDTO, IoCItemDTO
+from app.schemas.remediation import (
+    RemediationExecuteRequest,
+    RemediationBatchRequest,
+    RemediationExecutionResponse,
+    RemediationHistoryResponse,
+    STIXBundleDTO,
+)
 from app.services.investigation.report_service import DFIRReportService
 from app.services.export.pdf_exporter import PDFReportExporter
+from app.services.export.stix_exporter import STIX21Exporter
+from app.services.integrations.remediation_runner import RemediationRunnerService
 from app.workers.investigation_worker import enqueue_investigation_job
 
 router = APIRouter(prefix="/investigations", tags=["Email Threat Investigation Engine"])
@@ -739,3 +748,120 @@ def export_investigation_iocs(
         )
 
     return {"investigation_id": investigation_id, "total_iocs": len(report_dto.iocs), "iocs": report_dto.iocs}
+
+
+# ============================================================================
+# Remediation Execution & STIX 2.1 CTI Export Endpoints
+# ============================================================================
+
+@router.post(
+    "/{investigation_id}/remediation/execute",
+    response_model=RemediationExecutionResponse,
+    summary="Execute SOC Remediation Action",
+    description="Executes a prioritized containment or eradication action against perimeter firewalls, SWG, MTA, mailboxes, or EDR.",
+)
+def execute_remediation_action(
+    investigation_id: str,
+    payload: RemediationExecuteRequest,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    runner = RemediationRunnerService(db)
+    return runner.execute_action(
+        target_id=investigation_id,
+        action_id=payload.action_id,
+        user_id=current_user.id,
+        dry_run=payload.dry_run,
+        custom_payload=payload.action_payload,
+    )
+
+
+@router.post(
+    "/{investigation_id}/remediation/batch",
+    response_model=List[RemediationExecutionResponse],
+    summary="Execute Batch Containment Actions (e.g. All P0)",
+    description="Executes all matching priority tier containment actions in a single atomic SOC workflow.",
+)
+def execute_batch_remediation(
+    investigation_id: str,
+    payload: RemediationBatchRequest,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    runner = RemediationRunnerService(db)
+    return runner.execute_batch(
+        target_id=investigation_id,
+        priority_filter=payload.priority_filter or "P0",
+        action_ids=payload.action_ids,
+        user_id=current_user.id,
+        dry_run=payload.dry_run,
+    )
+
+
+@router.get(
+    "/{investigation_id}/remediation/history",
+    response_model=RemediationHistoryResponse,
+    summary="Get Remediation Execution Audit History",
+    description="Retrieves the chronological audit log of all containment actions executed or reverted for this investigation.",
+)
+def get_remediation_history(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    runner = RemediationRunnerService(db)
+    return runner.get_history(investigation_id)
+
+
+@router.post(
+    "/{investigation_id}/remediation/{log_id}/rollback",
+    response_model=RemediationExecutionResponse,
+    summary="Rollback Executed Containment Rule",
+    description="Deactivates an active firewall, DNS sinkhole, or mail filter rule using its original audit log token.",
+)
+def rollback_remediation_action(
+    investigation_id: str,
+    log_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    runner = RemediationRunnerService(db)
+    return runner.rollback_action(log_id=log_id, user_id=current_user.id)
+
+
+@router.get(
+    "/{investigation_id}/export/stix",
+    summary="Export STIX 2.1 CTI Bundle",
+    description="Generates a standards-compliant STIX 2.1 JSON bundle for threat intelligence sharing.",
+)
+def export_investigation_stix(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    inv_service = InvestigationService(db)
+    record = inv_service.get_by_investigation_id(investigation_id) or inv_service.get_by_analysis_id(investigation_id)
+    if record:
+        inv_service.log_audit_event(
+            investigation_id=record.investigation_id,
+            user_id=current_user.id,
+            action="stix_bundle_exported",
+        )
+
+    report_service = DFIRReportService(db)
+    report_dto = report_service.generate_dfir_report(investigation_id)
+
+    stix_exporter = STIX21Exporter(report_dto)
+    stix_json = stix_exporter.export_stix_json()
+
+    clean_id = investigation_id.replace(" ", "_")
+    filename = f"AEGIS_STIX_{clean_id}.json"
+
+    return Response(
+        content=stix_json,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/json",
+        },
+    )
