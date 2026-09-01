@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ConfigDict
 # Request Schemas
 # ---------------------------------------------------------------------------
 
-class CreateInvestigationRequest(BaseModel):
+class InvestigationCreateRequest(BaseModel):
     analysis_id: str = Field(..., description="Target Task 01 analysis ID to investigate", examples=["ANL-1234-5678"])
     force_reinvestigation: bool = Field(
         default=False,
@@ -19,6 +19,10 @@ class CreateInvestigationRequest(BaseModel):
     )
 
 
+# Backward-compatible alias
+CreateInvestigationRequest = InvestigationCreateRequest
+
+
 class InvestigationFilterParams(BaseModel):
     status: Optional[str] = None
     threat_type: Optional[str] = None
@@ -28,51 +32,43 @@ class InvestigationFilterParams(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Findings DTO
+# Graph & Cytoscape Node / Edge Models
 # ---------------------------------------------------------------------------
 
-class InvestigationFindingDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: Optional[str] = None
-    finding_id: str
-    investigation_id: str
-    reason_code: str
-    title: str
-    severity: str  # low, moderate, medium, high, critical
-    description: str
-    confidence: float
-    evidence_references: List[str] = Field(default_factory=list)
-    entity_ids: List[str] = Field(default_factory=list)
-    relationship_ids: List[str] = Field(default_factory=list)
-    created_at: Optional[datetime] = None
-
-
-# ---------------------------------------------------------------------------
-# Cytoscape Graph Models
-# ---------------------------------------------------------------------------
-
-class CytoscapeNodeData(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class GraphNodeData(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: str
     label: str
+    name: Optional[str] = None
     type: str  # Email, Person, EmailAddress, Domain, URL, IP, Attachment, FileHash, MailServer
-    severity: Optional[str] = None
     risk_score: Optional[int] = None
+    properties: Dict[str, Any] = Field(default_factory=dict)
+    severity: Optional[str] = None
     is_origin: Optional[bool] = False
     is_suspicious: Optional[bool] = False
     evidence_reference: Optional[str] = None
-    properties: Dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.name is None:
+            self.name = self.label
 
 
-class CytoscapeNode(BaseModel):
+CytoscapeNodeData = GraphNodeData
+
+
+class GraphNode(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
     group: str = "nodes"
-    data: CytoscapeNodeData
+    data: GraphNodeData
 
 
-class CytoscapeEdgeData(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+CytoscapeNode = GraphNode
+
+
+class GraphEdgeData(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: str
     source: str
@@ -84,17 +80,64 @@ class CytoscapeEdgeData(BaseModel):
     properties: Dict[str, Any] = Field(default_factory=dict)
 
 
-class CytoscapeEdge(BaseModel):
+CytoscapeEdgeData = GraphEdgeData
+
+
+class GraphEdge(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
     group: str = "edges"
-    data: CytoscapeEdgeData
+    data: GraphEdgeData
+
+
+CytoscapeEdge = GraphEdge
 
 
 class CytoscapeGraphResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    investigation_id: Optional[str] = None
+    node_count: int = 0
+    edge_count: int = 0
+    nodes: List[GraphNode] = Field(default_factory=list)
+    edges: List[GraphEdge] = Field(default_factory=list)
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.node_count and self.nodes:
+            self.node_count = len(self.nodes)
+        if not self.edge_count and self.edges:
+            self.edge_count = len(self.edges)
+
+
+# ---------------------------------------------------------------------------
+# Findings DTO
+# ---------------------------------------------------------------------------
+
+class InvestigationFindingDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    id: Optional[Any] = None
+    finding_id: Optional[str] = None
     investigation_id: str
-    node_count: int
-    edge_count: int
-    nodes: List[CytoscapeNode]
-    edges: List[CytoscapeEdge]
+    finding_code: Optional[str] = None
+    reason_code: Optional[str] = None
+    title: str
+    severity: str = "medium"  # low, moderate, medium, high, critical
+    description: str
+    confidence: float = 0.8
+    evidence_json: Optional[Any] = Field(default_factory=list)
+    evidence_references: List[str] = Field(default_factory=list)
+    entity_ids: List[str] = Field(default_factory=list)
+    relationship_ids: List[str] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.finding_code and self.reason_code:
+            self.finding_code = self.reason_code
+        elif not self.reason_code and self.finding_code:
+            self.reason_code = self.finding_code
+        if not self.finding_id:
+            self.finding_id = self.finding_code or "FND-000"
 
 
 # ---------------------------------------------------------------------------
@@ -155,22 +198,28 @@ class ThreatPathStepDTO(BaseModel):
     target_node_id: Optional[str] = None
 
 
-class ThreatPathDTO(BaseModel):
+class ThreatPath(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
     path_id: str
-    path_type: str  # credential_harvesting_path, malware_delivery_path, origin_relay_path, impersonation_path
     title: str
-    description: str
     severity: str
-    confidence: float
-    steps: List[str]  # Human-readable step descriptions
-    node_ids: List[str]
-    edge_ids: List[str]
+    description: str
+    node_ids: List[str] = Field(default_factory=list)
+    edge_ids: List[str] = Field(default_factory=list)
+    path_type: Optional[str] = None
+    confidence: Optional[float] = 1.0
+    steps: List[str] = Field(default_factory=list)
+
+
+# Backward-compatible alias
+ThreatPathDTO = ThreatPath
 
 
 class ThreatPathsResponse(BaseModel):
     investigation_id: str
     total_paths: int
-    paths: List[ThreatPathDTO]
+    paths: List[ThreatPath]
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +230,7 @@ class TimelineEventDTO(BaseModel):
     id: str
     timestamp: str
     title: str
-    event_type: str  # email_received, header_observed, url_extracted, attachment_identified, analysis_completed, investigation_started, graph_generated, investigation_completed
+    event_type: str
     description: str
     source: str
     evidence_reference: Optional[str] = None
@@ -198,7 +247,7 @@ class InvestigationSummaryDTO(BaseModel):
     entity_counts: Dict[str, int] = Field(default_factory=dict)
     finding_counts: Dict[str, int] = Field(default_factory=dict)
     top_findings: List[InvestigationFindingDTO] = Field(default_factory=list)
-    key_threat_paths: List[ThreatPathDTO] = Field(default_factory=list)
+    key_threat_paths: List[ThreatPath] = Field(default_factory=list)
     timeline: List[TimelineEventDTO] = Field(default_factory=list)
     executive_summary: Optional[str] = None
 
@@ -211,10 +260,22 @@ class InvestigationStatusResponse(BaseModel):
     investigation_id: str
     analysis_id: str
     status: str  # created, processing, completed, failed
-    stage: str  # loading_analysis, building_entities, building_relationships, syncing_graph, generating_findings, generating_paths, generating_summary, completed
+    stage: str
     progress: int  # 0 - 100
     error_code: Optional[str] = None
     error_message_safe: Optional[str] = None
+
+
+class InvestigationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    investigation_id: str
+    analysis_id: str
+    status: str
+    node_count: int = 0
+    edge_count: int = 0
+    threat_path_count: int = 0
+    summary: str = ""
 
 
 class InvestigationDetailResponse(BaseModel):

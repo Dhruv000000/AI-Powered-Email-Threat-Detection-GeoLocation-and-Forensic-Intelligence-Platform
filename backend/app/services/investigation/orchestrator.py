@@ -11,11 +11,11 @@ from app.graph import get_graph_store
 from app.services.investigation.entity_builder import EntityBuilder
 from app.services.investigation.relationship_builder import RelationshipBuilder
 from app.services.investigation.findings import FindingsEngine
-from app.services.investigation.paths import ThreatPathEngine
-from app.services.investigation.summary import SummaryEngine
+from app.services.investigation.paths_engine import ThreatPathEngine
+from app.services.investigation.summary_generator import SummaryEngine
 from app.services.investigation.graph_service import GraphService
 from app.services.investigation.investigation_service import InvestigationService
-from app.schemas.investigation import InvestigationDetailResponse
+from app.schemas.investigation import InvestigationDetailResponse, InvestigationResponse
 
 
 class InvestigationOrchestrator:
@@ -101,7 +101,7 @@ class InvestigationOrchestrator:
             relationships = rel_builder.build_all_relationships()
             logger.info(f"Built {len(relationships)} typed relationships for investigation {investigation_id}.")
 
-            # 6. Stage: syncing_graph (Neo4j in production / In-Memory in tests)
+            # 6. Stage: syncing_graph (Neo4j in production / InMemoryGraphStore in local/CI)
             self.inv_service.update_stage(inv_record, stage="syncing_graph", progress=55)
             try:
                 self.graph_service.sync_investigation_graph(investigation_id, entities, relationships)

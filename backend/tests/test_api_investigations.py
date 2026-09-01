@@ -7,12 +7,12 @@ from app.db.models.email_analysis import (
 )
 
 
-def _seed_api_analysis(db_session, analysis_id="ANL-API-001"):
+def _seed_api_analysis(db_session, analysis_id="ANL-API-001", status="completed"):
     analysis = EmailAnalysisModel(
         analysis_id=analysis_id,
         filename="api_sample.eml",
         sha256="abcdef1234567890",
-        status="completed",
+        status=status,
         threat_type="phishing",
         risk_score=85,
         severity="high",
@@ -94,6 +94,13 @@ def test_investigation_api_endpoints(client, db_session):
     assert graph["edge_count"] >= 2
     assert "nodes" in graph
     assert "edges" in graph
+    for n in graph["nodes"]:
+        assert "data" in n
+        assert "id" in n["data"]
+    for e in graph["edges"]:
+        assert "data" in e
+        assert "source" in e["data"]
+        assert "target" in e["data"]
 
     # 7. GET /api/v1/investigations/{id}/entities/{entity_id}
     entity_id = graph["nodes"][0]["data"]["id"]
@@ -111,3 +118,24 @@ def test_investigation_api_endpoints(client, db_session):
     assert res_paths.status_code == 200
     paths = res_paths.json()
     assert paths["total_paths"] >= 1
+
+
+def test_investigation_api_error_handling(client, db_session):
+    # Test 404 for nonexistent analysis
+    res_404 = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": "ANL-NONEXISTENT-999"},
+    )
+    assert res_404.status_code == 404
+
+    # Test 400 for analysis not in completed status
+    _seed_api_analysis(db_session, "ANL-API-PROCESSING", status="processing")
+    res_400 = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": "ANL-API-PROCESSING"},
+    )
+    assert res_400.status_code == 400
+
+    # Test 404 for nonexistent investigation
+    res_inv_404 = client.get("/api/v1/investigations/INV-NONEXISTENT")
+    assert res_inv_404.status_code == 404

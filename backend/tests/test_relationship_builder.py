@@ -58,16 +58,29 @@ def test_relationship_builder_provenance_and_vocabulary():
 
     rel_types = {r["type"] for r in relationships}
     assert "SENT" in rel_types
-    assert "REPLIED_TO" in rel_types
+    assert "ADDRESSED_TO" in rel_types
     assert "DELIVERED_TO" in rel_types
-    assert "LINKS_TO" in rel_types
+    assert "SPECIFIED_AS_REPLY_TO" in rel_types
+    assert "REPLIED_TO" in rel_types
+    assert "BELONGS_TO_DOMAIN" in rel_types
     assert "USES_DOMAIN" in rel_types
+    assert "CONTAINS_URL" in rel_types
+    assert "LINKS_TO" in rel_types
+    assert "HOSTED_ON_DOMAIN" in rel_types
+    assert "RELAYED_THROUGH" in rel_types
     assert "OBSERVED_VIA" in rel_types
     assert "HAS_IP" in rel_types
+    assert "ATTACHED" in rel_types
     assert "HAS_ATTACHMENT" in rel_types
     assert "HAS_HASH" in rel_types
 
-    # Validate provenance on every relationship
+    # Validate provenance and properties on relationships
+    sent_rel = next(r for r in relationships if r["type"] == "SENT")
+    assert sent_rel["properties"].get("source") == "header_from"
+
+    relay_rel = next(r for r in relationships if r["type"] == "RELAYED_THROUGH")
+    assert "hop_index" in relay_rel["properties"]
+
     for r in relationships:
         assert "provenance" in r
         assert r["provenance"] is not None

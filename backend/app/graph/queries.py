@@ -12,6 +12,36 @@ CREATE CONSTRAINT entity_id_unique IF NOT EXISTS
 FOR (n:Entity) REQUIRE n.id IS UNIQUE
 """
 
+CREATE_EMAIL_ANALYSIS_ID_CONSTRAINT = """
+CREATE CONSTRAINT email_analysis_id_unique IF NOT EXISTS
+FOR (e:Email) REQUIRE e.analysis_id IS UNIQUE
+"""
+
+CREATE_EMAIL_ADDRESS_CONSTRAINT = """
+CREATE CONSTRAINT email_address_unique IF NOT EXISTS
+FOR (a:EmailAddress) REQUIRE a.address IS UNIQUE
+"""
+
+CREATE_DOMAIN_NAME_CONSTRAINT = """
+CREATE CONSTRAINT domain_name_unique IF NOT EXISTS
+FOR (d:Domain) REQUIRE d.domain_name IS UNIQUE
+"""
+
+CREATE_URL_NORMALIZED_CONSTRAINT = """
+CREATE CONSTRAINT url_normalized_unique IF NOT EXISTS
+FOR (u:URL) REQUIRE u.normalized_url IS UNIQUE
+"""
+
+CREATE_IP_ADDRESS_CONSTRAINT = """
+CREATE CONSTRAINT ip_address_unique IF NOT EXISTS
+FOR (i:IPAddress) REQUIRE i.ip IS UNIQUE
+"""
+
+CREATE_ATTACHMENT_SHA256_CONSTRAINT = """
+CREATE CONSTRAINT attachment_sha256_unique IF NOT EXISTS
+FOR (att:Attachment) REQUIRE att.sha256 IS UNIQUE
+"""
+
 CREATE_INVESTIGATION_INDEX = """
 CREATE INDEX entity_investigation_idx IF NOT EXISTS
 FOR (n:Entity) ON (n.investigation_id)
@@ -21,6 +51,7 @@ CREATE_ENTITY_TYPE_INDEX = """
 CREATE INDEX entity_type_idx IF NOT EXISTS
 FOR (n:Entity) ON (n.type)
 """
+
 
 # ---------------------------------------------------------------------------
 # Node Mutations (Idempotent MERGE)

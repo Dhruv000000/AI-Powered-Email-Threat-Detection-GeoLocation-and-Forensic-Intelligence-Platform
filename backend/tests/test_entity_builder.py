@@ -8,6 +8,19 @@ from app.db.models.email_analysis import (
     EmailAttachmentModel,
     EmailRelayHopModel,
 )
+from app.schemas.email_analysis import (
+    EmailAnalysisResponse,
+    EmailMetadataSchema,
+    ExtractedUrlSchema,
+    ExtractedIpSchema,
+    AttachmentMetadataSchema,
+    RelayHopSchema,
+    AuthenticationResultsSchema,
+    AuthStatusItem,
+    ClassificationResultSchema,
+    ProbableOriginSchema,
+    EvidenceMetadataSchema,
+)
 
 
 def test_email_address_normalization():
@@ -59,7 +72,7 @@ def test_ip_normalization():
     assert ver3 == 6
 
 
-def test_entity_builder_extraction():
+def test_entity_builder_extraction_from_model():
     analysis = EmailAnalysisModel(
         analysis_id="ANL-TEST-001",
         filename="phishing.eml",
@@ -121,9 +134,104 @@ def test_entity_builder_extraction():
     assert "URL" in entity_types
     assert "Attachment" in entity_types
     assert "FileHash" in entity_types
-    assert "IP" in entity_types
+    assert any(e["type"] in ("IP", "IPAddress") for e in entities)
     assert "MailServer" in entity_types
 
     # Ensure deterministic IDs
     email_node = next(e for e in entities if e["type"] == "Email")
     assert email_node["id"] == "email:ANL-TEST-001"
+    assert email_node["properties"]["threat_type"] == "phishing"
+    assert email_node["properties"]["risk_score"] == 85
+
+    # Check Domain properties
+    domain_node = next(e for e in entities if e["type"] == "Domain" and e["display_label"] == "paypal-security.xyz")
+    assert domain_node["properties"]["domain_name"] == "paypal-security.xyz"
+    assert domain_node["properties"]["tld"] == "xyz"
+
+
+def test_entity_builder_extraction_from_pydantic_dto():
+    dto = EmailAnalysisResponse(
+        analysis_id="ANL-DTO-001",
+        status="completed",
+        email=EmailMetadataSchema(
+            subject="Urgent: Invoice Overdue",
+            from_header="Finance <finance@evil-corp.com>",
+            from_email="finance@evil-corp.com",
+            reply_to="hacker@fraud.net",
+            to_recipients=["victim@target.org"],
+            date_header="Mon, 01 Sep 2026 08:00:00 +0000",
+        ),
+        classification=ClassificationResultSchema(
+            threat_type="phishing",
+            risk_score=92,
+            severity="critical",
+            ai_confidence=0.96,
+        ),
+        authentication=AuthenticationResultsSchema(
+            spf=AuthStatusItem(status="fail"),
+            dkim=AuthStatusItem(status="none"),
+            dmarc=AuthStatusItem(status="fail"),
+        ),
+        relay_path=[
+            RelayHopSchema(
+                hop_number=1,
+                by_server="mx.target.org",
+                ip="203.0.113.10",
+                is_origin_node=True,
+                raw_header="Received: from mail.evil-corp.com by mx.target.org with ESMTP",
+            )
+        ],
+        indicators={
+            "urls": [
+                {
+                    "original_url": "https://evil-corp.com/login",
+                    "normalized_url": "https://evil-corp.com/login",
+                    "scheme": "https",
+                    "hostname": "evil-corp.com",
+                    "domain": "evil-corp.com",
+                    "risk_score": 95,
+                    "threat_level": "critical",
+                    "is_lookalike": True,
+                }
+            ],
+            "ips": [
+                {
+                    "ip": "198.51.100.99",
+                    "source": "url_host",
+                    "is_probable_origin": False,
+                }
+            ],
+            "attachments": [
+                {
+                    "filename": "payload.exe",
+                    "sha256": "c0ffee1234567890",
+                    "content_type": "application/x-dosexec",
+                    "size_bytes": 4096,
+                    "is_executable": True,
+                    "is_suspicious": True,
+                }
+            ],
+        },
+        probable_origin=ProbableOriginSchema(ip="203.0.113.10", confidence=0.88),
+        evidence=EvidenceMetadataSchema(
+            sha256="deadbeef12345678",
+            filename="threat_sample.eml",
+            file_size_bytes=1024,
+        ),
+    )
+
+    builder = EntityBuilder(dto, investigation_id="INV-DTO-001")
+    entities = builder.build_all_entities()
+
+    email_node = next(e for e in entities if e["type"] == "Email")
+    assert email_node["id"] == "email:ANL-DTO-001"
+    assert email_node["properties"]["threat_type"] == "phishing"
+    assert email_node["properties"]["risk_score"] == 92
+
+    url_node = next(e for e in entities if e["type"] == "URL")
+    assert url_node["properties"]["is_lookalike"] is True
+    assert url_node["properties"]["hostname"] == "evil-corp.com"
+
+    att_node = next(e for e in entities if e["type"] == "Attachment")
+    assert att_node["properties"]["filename"] == "payload.exe"
+    assert att_node["properties"]["is_executable"] is True

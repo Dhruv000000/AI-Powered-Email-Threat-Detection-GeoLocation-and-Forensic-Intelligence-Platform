@@ -67,9 +67,11 @@ class Settings(BaseSettings):
     # Neo4j Graph Database
     NEO4J_URI: str = Field(default="bolt://localhost:7687", description="Neo4j Bolt connection URI")
     NEO4J_USERNAME: str = Field(default="neo4j", description="Neo4j username")
+    NEO4J_USER: str = Field(default="neo4j", description="Neo4j username alias")
     NEO4J_PASSWORD: str = Field(default="neo4jpassword", description="Neo4j password")
     NEO4J_DATABASE: str = Field(default="neo4j", description="Neo4j database name")
     NEO4J_MAX_CONNECTION_LIFETIME: int = Field(default=3600, description="Max connection lifetime in seconds")
+    NEO4J_CONNECTION_TIMEOUT: float = Field(default=2.0, description="Neo4j connection acquisition and healthcheck timeout in seconds")
 
     # Investigation & Graph Store
     GRAPH_STORE_TYPE: str = Field(default="neo4j", description="'neo4j' for production or 'memory' for unit testing")

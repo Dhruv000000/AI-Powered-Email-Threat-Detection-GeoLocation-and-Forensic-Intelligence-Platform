@@ -1,8 +1,8 @@
 import hashlib
 import ipaddress
 import re
-from typing import Dict, Any, List, Tuple, Optional, Set
-from urllib.parse import urlparse, unquote
+from typing import Dict, Any, List, Tuple, Optional, Union
+from urllib.parse import urlparse
 
 from app.db.models.email_analysis import (
     EmailAnalysisModel,
@@ -15,20 +15,73 @@ from app.db.models.email_analysis import (
     EmailAttachmentModel,
     EmailIndicatorModel,
 )
+from app.schemas.email_analysis import EmailAnalysisResponse
 
 
 class EntityBuilder:
     """
     Forensic Entity Builder.
-    Transforms Task 01 structured email evidence into normalized, deduplicated graph entity nodes
-    with deterministic identifiers and rich evidentiary provenance.
+    Transforms Task 01 structured email analysis records (SQLAlchemy model, Pydantic response, or dict)
+    into normalized, deduplicated graph entity nodes with deterministic identifiers and evidentiary provenance.
     Strictly static analysis with zero live network or DNS egress.
     """
 
-    def __init__(self, analysis: EmailAnalysisModel, investigation_id: str):
+    def __init__(self, analysis: Union[EmailAnalysisModel, EmailAnalysisResponse, Dict[str, Any]], investigation_id: str = "INV-DEFAULT"):
         self.analysis = analysis
-        self.analysis_id = analysis.analysis_id
         self.investigation_id = investigation_id
+        
+        # Extract core analysis attributes generically
+        if isinstance(analysis, dict):
+            self.analysis_id = analysis.get("analysis_id", "ANL-UNKNOWN")
+            self.filename = analysis.get("filename", "")
+            self.sha256 = analysis.get("sha256", "")
+            
+            classification = analysis.get("classification") or {}
+            self.risk_score = analysis.get("risk_score", classification.get("risk_score") if isinstance(classification, dict) else getattr(classification, "risk_score", None))
+            self.threat_type = analysis.get("threat_type", classification.get("threat_type") if isinstance(classification, dict) else getattr(classification, "threat_type", None))
+            self.severity = analysis.get("severity", classification.get("severity") if isinstance(classification, dict) else getattr(classification, "severity", None))
+            self.ai_confidence = analysis.get("ai_confidence", classification.get("ai_confidence") if isinstance(classification, dict) else getattr(classification, "ai_confidence", None))
+            
+            prob_orig = analysis.get("probable_origin")
+            self.probable_origin_ip = analysis.get("probable_origin_ip") or (prob_orig.get("ip") if isinstance(prob_orig, dict) else getattr(prob_orig, "ip", None))
+            self.probable_origin_confidence = analysis.get("probable_origin_confidence") or (prob_orig.get("confidence") if isinstance(prob_orig, dict) else getattr(prob_orig, "confidence", None))
+            self.probable_origin_source = analysis.get("probable_origin_source") or (prob_orig.get("source") if isinstance(prob_orig, dict) else getattr(prob_orig, "source", None))
+            
+            self.metadata_obj = analysis.get("email") or analysis.get("metadata") or analysis.get("metadata_record")
+            self.relay_hops = analysis.get("relay_hops") or analysis.get("relay_path") or []
+            
+            indicators = analysis.get("indicators") or {}
+            self.urls = analysis.get("extracted_urls") or analysis.get("urls") or (indicators.get("urls") if isinstance(indicators, dict) else []) or []
+            self.ips = analysis.get("extracted_ips") or analysis.get("ips") or (indicators.get("ips") if isinstance(indicators, dict) else []) or []
+            self.attachments = analysis.get("attachments") or (indicators.get("attachments") if isinstance(indicators, dict) else []) or []
+        else:
+            self.analysis_id = getattr(analysis, "analysis_id", "ANL-UNKNOWN")
+            self.filename = getattr(analysis, "filename", "")
+            self.sha256 = getattr(analysis, "sha256", "")
+            
+            classification = getattr(analysis, "classification", None)
+            self.risk_score = getattr(analysis, "risk_score", None) or (getattr(classification, "risk_score", None) if classification else None)
+            self.threat_type = getattr(analysis, "threat_type", None) or (getattr(classification, "threat_type", None) if classification else None)
+            self.severity = getattr(analysis, "severity", None) or (getattr(classification, "severity", None) if classification else None)
+            self.ai_confidence = getattr(analysis, "ai_confidence", None) or (getattr(classification, "ai_confidence", None) if classification else None)
+            
+            prob_orig = getattr(analysis, "probable_origin", None)
+            self.probable_origin_ip = getattr(analysis, "probable_origin_ip", None) or (getattr(prob_orig, "ip", None) if prob_orig else None)
+            self.probable_origin_confidence = getattr(analysis, "probable_origin_confidence", None) or (getattr(prob_orig, "confidence", None) if prob_orig else None)
+            self.probable_origin_source = getattr(analysis, "probable_origin_source", None) or (getattr(prob_orig, "source", None) if prob_orig else None)
+            
+            self.metadata_obj = getattr(analysis, "email", None) or getattr(analysis, "metadata_record", None) or getattr(analysis, "metadata", None)
+            self.relay_hops = getattr(analysis, "relay_hops", None) or getattr(analysis, "relay_path", []) or []
+            
+            indicators = getattr(analysis, "indicators", None)
+            ind_urls = indicators.get("urls", []) if isinstance(indicators, dict) else []
+            ind_ips = indicators.get("ips", []) if isinstance(indicators, dict) else []
+            ind_atts = indicators.get("attachments", []) if isinstance(indicators, dict) else []
+            
+            self.urls = getattr(analysis, "urls", None) or getattr(analysis, "extracted_urls", None) or ind_urls or []
+            self.ips = getattr(analysis, "ips", None) or getattr(analysis, "extracted_ips", None) or ind_ips or []
+            self.attachments = getattr(analysis, "attachments", None) or ind_atts or []
+
         self._entities: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod
@@ -148,7 +201,6 @@ class EntityBuilder:
         """Add or merge entity node with deterministic deduplication."""
         if entity_id in self._entities:
             existing = self._entities[entity_id]
-            # Retain highest risk score
             if risk_score is not None:
                 if existing.get("risk_score") is None or risk_score > existing.get("risk_score", 0):
                     existing["risk_score"] = risk_score
@@ -166,6 +218,7 @@ class EntityBuilder:
             "investigation_id": self.investigation_id,
             "type": entity_type,
             "label": display_label,
+            "name": display_label,
             "display_label": display_label,
             "normalized_value": normalized_value,
             "risk_score": risk_score,
@@ -186,34 +239,63 @@ class EntityBuilder:
 
         # 1. Primary Email Entity
         email_id = f"email:{self.analysis_id}"
-        meta = self.analysis.metadata_record
-        subject_preview = (meta.subject if meta and meta.subject else "No Subject")[:60]
+        meta = self.metadata_obj
+        
+        subject = ""
+        message_id = None
+        date_header = None
+        from_header = None
+        from_email = None
+        reply_to = None
+        to_recipients = []
+
+        if meta:
+            if isinstance(meta, dict):
+                subject = meta.get("subject") or ""
+                message_id = meta.get("message_id")
+                date_header = meta.get("date_header") or meta.get("date")
+                from_header = meta.get("from_header")
+                from_email = meta.get("from_email") or meta.get("sender")
+                reply_to = meta.get("reply_to")
+                to_recipients = meta.get("to_recipients") or meta.get("recipients") or []
+            else:
+                subject = getattr(meta, "subject", "") or ""
+                message_id = getattr(meta, "message_id", None)
+                date_header = getattr(meta, "date_header", None)
+                from_header = getattr(meta, "from_header", None)
+                from_email = getattr(meta, "from_email", None)
+                reply_to = getattr(meta, "reply_to", None)
+                to_recipients = getattr(meta, "to_recipients", []) or []
+
+        subject_preview = (subject if subject else "No Subject")[:60]
         self._add_entity(
             entity_id=email_id,
             entity_type="Email",
             display_label=f"Email: {subject_preview}",
             normalized_value=self.analysis_id,
-            risk_score=self.analysis.risk_score,
-            severity=self.analysis.severity,
+            risk_score=self.risk_score,
+            severity=self.severity,
             evidence_reference=f"email_analyses:{self.analysis_id}",
             properties={
                 "analysis_id": self.analysis_id,
-                "message_id": meta.message_id if meta else None,
-                "threat_type": self.analysis.threat_type,
-                "risk_score": self.analysis.risk_score,
-                "severity": self.analysis.severity,
-                "ai_confidence": self.analysis.ai_confidence,
-                "filename": self.analysis.filename,
-                "sha256": self.analysis.sha256,
+                "subject": subject,
+                "sha256": self.sha256,
+                "risk_score": self.risk_score,
+                "threat_type": self.threat_type,
+                "received_date": date_header,
+                "message_id": message_id,
+                "severity": self.severity,
+                "ai_confidence": self.ai_confidence,
+                "filename": self.filename,
             },
-            is_suspicious=(self.analysis.risk_score or 0) >= 60,
+            is_suspicious=(self.risk_score or 0) >= 60,
         )
 
         # 2. Sender, Recipients & Domains
         if meta:
             # From Address
-            if meta.from_email or meta.from_header:
-                raw_from = meta.from_header or meta.from_email or ""
+            raw_from = from_header or from_email or ""
+            if raw_from:
                 norm_email, norm_domain, display_name = self.normalize_email_address(raw_from)
                 if norm_email:
                     addr_hash = hashlib.sha256(norm_email.encode("utf-8")).hexdigest()[:16]
@@ -224,19 +306,30 @@ class EntityBuilder:
                         display_label=norm_email,
                         normalized_value=norm_email,
                         evidence_reference="email_metadata:from_header",
-                        properties={"role": "sender", "domain": norm_domain},
+                        properties={
+                            "address": norm_email,
+                            "display_name": display_name,
+                            "domain": norm_domain,
+                            "role": "sender",
+                        },
                     )
 
                     # Sender Domain
                     if norm_domain:
                         dom_id = f"domain:{norm_domain}"
+                        tld = norm_domain.split(".")[-1] if "." in norm_domain else ""
                         self._add_entity(
                             entity_id=dom_id,
                             entity_type="Domain",
                             display_label=norm_domain,
                             normalized_value=norm_domain,
                             evidence_reference="email_metadata:from_domain",
-                            properties={"role": "sender_domain"},
+                            properties={
+                                "domain_name": norm_domain,
+                                "is_lookalike": False,
+                                "tld": tld,
+                                "role": "sender_domain",
+                            },
                         )
 
                     # Sender Person (if display name is present)
@@ -253,8 +346,8 @@ class EntityBuilder:
                         )
 
             # Reply-To Address & Domain (if distinct)
-            if meta.reply_to:
-                rt_norm, rt_domain, _ = self.normalize_email_address(meta.reply_to)
+            if reply_to:
+                rt_norm, rt_domain, rt_disp = self.normalize_email_address(reply_to)
                 if rt_norm:
                     rt_hash = hashlib.sha256(rt_norm.encode("utf-8")).hexdigest()[:16]
                     rt_id = f"email_address:{rt_hash}"
@@ -264,24 +357,35 @@ class EntityBuilder:
                         display_label=rt_norm,
                         normalized_value=rt_norm,
                         evidence_reference="email_metadata:reply_to",
-                        properties={"role": "reply_to", "domain": rt_domain},
+                        properties={
+                            "address": rt_norm,
+                            "display_name": rt_disp,
+                            "domain": rt_domain,
+                            "role": "reply_to",
+                        },
                         is_suspicious=True,
                     )
                     if rt_domain:
                         rt_dom_id = f"domain:{rt_domain}"
+                        tld = rt_domain.split(".")[-1] if "." in rt_domain else ""
                         self._add_entity(
                             entity_id=rt_dom_id,
                             entity_type="Domain",
                             display_label=rt_domain,
                             normalized_value=rt_domain,
                             evidence_reference="email_metadata:reply_to",
-                            properties={"role": "reply_to_domain"},
+                            properties={
+                                "domain_name": rt_domain,
+                                "is_lookalike": False,
+                                "tld": tld,
+                                "role": "reply_to_domain",
+                            },
                         )
 
             # To Recipients
-            if meta.to_recipients and isinstance(meta.to_recipients, list):
-                for raw_to in meta.to_recipients:
-                    t_norm, t_domain, _ = self.normalize_email_address(str(raw_to))
+            if to_recipients and isinstance(to_recipients, list):
+                for raw_to in to_recipients:
+                    t_norm, t_domain, t_disp = self.normalize_email_address(str(raw_to))
                     if t_norm:
                         t_hash = hashlib.sha256(t_norm.encode("utf-8")).hexdigest()[:16]
                         t_id = f"email_address:{t_hash}"
@@ -291,12 +395,42 @@ class EntityBuilder:
                             display_label=t_norm,
                             normalized_value=t_norm,
                             evidence_reference="email_metadata:to_recipients",
-                            properties={"role": "recipient", "domain": t_domain},
+                            properties={
+                                "address": t_norm,
+                                "display_name": t_disp,
+                                "domain": t_domain,
+                                "role": "recipient",
+                            },
                         )
+                        if t_domain:
+                            t_dom_id = f"domain:{t_domain}"
+                            tld = t_domain.split(".")[-1] if "." in t_domain else ""
+                            self._add_entity(
+                                entity_id=t_dom_id,
+                                entity_type="Domain",
+                                display_label=t_domain,
+                                normalized_value=t_domain,
+                                evidence_reference="email_metadata:to_recipients",
+                                properties={
+                                    "domain_name": t_domain,
+                                    "is_lookalike": False,
+                                    "tld": tld,
+                                    "role": "recipient_domain",
+                                },
+                            )
 
         # 3. Relay Hops & Mail Servers
-        for hop in self.analysis.relay_hops:
-            server_name = hop.by_server or hop.from_server
+        for hop in self.relay_hops:
+            by_server = getattr(hop, "by_server", None) if not isinstance(hop, dict) else hop.get("by_server")
+            from_server = getattr(hop, "from_server", None) if not isinstance(hop, dict) else hop.get("from_server")
+            hop_ip = getattr(hop, "ip", None) if not isinstance(hop, dict) else hop.get("ip")
+            hop_num = getattr(hop, "hop_number", 1) if not isinstance(hop, dict) else hop.get("hop_number", 1)
+            is_origin = getattr(hop, "is_origin_node", False) if not isinstance(hop, dict) else hop.get("is_origin_node", False)
+            is_anomaly = getattr(hop, "is_anomaly", False) if not isinstance(hop, dict) else hop.get("is_anomaly", False)
+            protocol = getattr(hop, "protocol", "ESMTP") if not isinstance(hop, dict) else hop.get("protocol", "ESMTP")
+            delay = getattr(hop, "delay_seconds", 0.0) if not isinstance(hop, dict) else hop.get("delay_seconds", 0.0)
+
+            server_name = by_server or from_server
             if server_name:
                 norm_server = self.normalize_domain(server_name)
                 server_id = f"mail_server:{norm_server}"
@@ -305,164 +439,229 @@ class EntityBuilder:
                     entity_type="MailServer",
                     display_label=norm_server,
                     normalized_value=norm_server,
-                    evidence_reference=f"email_relay_hops:hop_{hop.hop_number}",
+                    evidence_reference=f"email_relay_hops:hop_{hop_num}",
                     properties={
-                        "hop_number": hop.hop_number,
-                        "protocol": hop.protocol,
-                        "delay_seconds": hop.delay_seconds,
-                        "is_origin": hop.is_origin_node,
-                        "is_anomaly": hop.is_anomaly,
+                        "server_name": norm_server,
+                        "hop_number": hop_num,
+                        "protocol": protocol,
+                        "delay_seconds": delay,
+                        "is_origin": is_origin,
+                        "is_anomaly": is_anomaly,
                     },
-                    is_origin=hop.is_origin_node,
-                    is_suspicious=hop.is_anomaly,
+                    is_origin=is_origin,
+                    is_suspicious=is_anomaly,
                 )
 
             # Hop IP
-            if hop.ip:
-                norm_ip, version, is_priv = self.normalize_ip(hop.ip)
+            if hop_ip:
+                norm_ip, version, is_priv = self.normalize_ip(hop_ip)
                 if norm_ip:
                     ip_id = f"ip:{norm_ip}"
                     self._add_entity(
                         entity_id=ip_id,
-                        entity_type="IP",
+                        entity_type="IPAddress",
                         display_label=norm_ip,
                         normalized_value=norm_ip,
-                        evidence_reference=f"email_relay_hops:hop_{hop.hop_number}",
+                        evidence_reference=f"email_relay_hops:hop_{hop_num}",
                         properties={
+                            "ip": norm_ip,
+                            "source": "received_header",
                             "ip_version": version,
                             "is_private": is_priv,
-                            "is_origin": hop.is_origin_node,
-                            "hop_number": hop.hop_number,
+                            "is_origin": is_origin,
+                            "hop_number": hop_num,
                         },
-                        is_origin=hop.is_origin_node,
+                        is_origin=is_origin,
                     )
 
         # 4. Extracted URLs & Associated Domains
-        for url_rec in self.analysis.urls:
-            url_hash, norm_url, scheme, hostname, domain = self.normalize_url(url_rec.original_url or url_rec.normalized_url)
+        for url_rec in self.urls:
+            raw_url = getattr(url_rec, "original_url", None) or getattr(url_rec, "normalized_url", "") if not isinstance(url_rec, dict) else (url_rec.get("original_url") or url_rec.get("normalized_url", ""))
+            u_id = getattr(url_rec, "id", None) if not isinstance(url_rec, dict) else url_rec.get("id")
+            u_risk = getattr(url_rec, "risk_score", 0) if not isinstance(url_rec, dict) else url_rec.get("risk_score", 0)
+            u_threat = getattr(url_rec, "threat_level", "clean") if not isinstance(url_rec, dict) else url_rec.get("threat_level", "clean")
+            is_lookalike = getattr(url_rec, "is_lookalike", False) if not isinstance(url_rec, dict) else url_rec.get("is_lookalike", False)
+            is_ip_based = getattr(url_rec, "is_ip_based", False) if not isinstance(url_rec, dict) else url_rec.get("is_ip_based", False)
+            is_shortened = getattr(url_rec, "is_shortened", False) if not isinstance(url_rec, dict) else url_rec.get("is_shortened", False)
+            reason = getattr(url_rec, "reason", None) if not isinstance(url_rec, dict) else url_rec.get("reason")
+
+            url_hash, norm_url, scheme, hostname, domain = self.normalize_url(raw_url)
             if norm_url:
                 url_id = f"url:{url_hash}"
                 url_label = norm_url if len(norm_url) <= 45 else f"{norm_url[:42]}..."
+                parsed_u = urlparse(norm_url)
+                path = parsed_u.path or "/"
+
+                is_suspicious_url = (u_risk or 0) >= 60 or bool(is_lookalike) or bool(is_ip_based) or (u_threat in ("high", "critical"))
+
                 self._add_entity(
                     entity_id=url_id,
                     entity_type="URL",
                     display_label=url_label,
                     normalized_value=norm_url,
-                    risk_score=url_rec.risk_score,
-                    severity=url_rec.threat_level,
-                    evidence_reference=f"email_urls:{url_rec.id}",
+                    risk_score=u_risk,
+                    severity=u_threat,
+                    evidence_reference=f"email_urls:{u_id or url_hash}",
                     properties={
+                        "normalized_url": norm_url,
                         "scheme": scheme,
                         "hostname": hostname,
-                        "domain": domain,
-                        "is_lookalike": bool(url_rec.is_lookalike),
-                        "is_ip_based": bool(url_rec.is_ip_based),
-                        "is_shortened": bool(url_rec.is_shortened),
-                        "threat_level": url_rec.threat_level or "clean",
-                        "risk_score": url_rec.risk_score or 0,
-                        "reason": url_rec.reason,
+                        "path": path,
+                        "is_suspicious": is_suspicious_url,
+                        "is_ip_url": bool(is_ip_based),
+                        "is_lookalike": bool(is_lookalike),
+                        "is_shortened": bool(is_shortened),
+                        "threat_level": u_threat,
+                        "risk_score": u_risk,
+                        "reason": reason,
                     },
-                    is_suspicious=(url_rec.risk_score or 0) >= 60 or bool(url_rec.is_lookalike),
+                    is_suspicious=is_suspicious_url,
                 )
 
                 # Domain of the URL
                 if domain:
                     norm_domain = self.normalize_domain(domain)
                     dom_id = f"domain:{norm_domain}"
+                    tld = norm_domain.split(".")[-1] if "." in norm_domain else ""
                     self._add_entity(
                         entity_id=dom_id,
                         entity_type="Domain",
                         display_label=norm_domain,
                         normalized_value=norm_domain,
-                        risk_score=url_rec.risk_score if url_rec.is_lookalike else None,
-                        severity=url_rec.threat_level if url_rec.is_lookalike else None,
-                        evidence_reference=f"email_urls:{url_rec.id}",
+                        risk_score=u_risk if is_lookalike else None,
+                        severity=u_threat if is_lookalike else None,
+                        evidence_reference=f"email_urls:{u_id or url_hash}",
                         properties={
-                            "is_lookalike": bool(url_rec.is_lookalike),
+                            "domain_name": norm_domain,
+                            "is_lookalike": bool(is_lookalike),
+                            "tld": tld,
                             "source_url": norm_url,
                         },
-                        is_suspicious=bool(url_rec.is_lookalike),
+                        is_suspicious=bool(is_lookalike),
                     )
 
+                # If URL hostname is an IP
+                if is_ip_based and hostname:
+                    ip_norm, version, is_priv = self.normalize_ip(hostname)
+                    if ip_norm:
+                        ip_id = f"ip:{ip_norm}"
+                        self._add_entity(
+                            entity_id=ip_id,
+                            entity_type="IPAddress",
+                            display_label=ip_norm,
+                            normalized_value=ip_norm,
+                            evidence_reference=f"email_urls:{u_id or url_hash}",
+                            properties={
+                                "ip": ip_norm,
+                                "source": "url_host",
+                                "ip_version": version,
+                                "is_private": is_priv,
+                            },
+                        )
+
         # 5. Extracted IPs & Probable Origin Candidate
-        for ip_rec in self.analysis.ips:
-            norm_ip, version, is_priv = self.normalize_ip(ip_rec.ip)
+        for ip_rec in self.ips:
+            raw_ip = getattr(ip_rec, "ip", "") if not isinstance(ip_rec, dict) else ip_rec.get("ip", "")
+            ip_id_ref = getattr(ip_rec, "id", "") if not isinstance(ip_rec, dict) else ip_rec.get("id", "")
+            ip_src = getattr(ip_rec, "source", "url_host") if not isinstance(ip_rec, dict) else ip_rec.get("source", "url_host")
+            ip_conf = getattr(ip_rec, "confidence", 1.0) if not isinstance(ip_rec, dict) else ip_rec.get("confidence", 1.0)
+            is_prob_orig = getattr(ip_rec, "is_probable_origin", False) if not isinstance(ip_rec, dict) else ip_rec.get("is_probable_origin", False)
+
+            norm_ip, version, is_priv = self.normalize_ip(raw_ip)
             if norm_ip:
                 ip_id = f"ip:{norm_ip}"
                 self._add_entity(
                     entity_id=ip_id,
-                    entity_type="IP",
+                    entity_type="IPAddress",
                     display_label=norm_ip,
                     normalized_value=norm_ip,
-                    evidence_reference=f"email_ips:{ip_rec.id}",
+                    evidence_reference=f"email_ips:{ip_id_ref or norm_ip}",
                     properties={
+                        "ip": norm_ip,
+                        "source": ip_src or "url_host",
                         "ip_version": version,
                         "is_private": is_priv,
-                        "source": ip_rec.source,
-                        "confidence": ip_rec.confidence,
-                        "is_probable_origin": ip_rec.is_probable_origin,
+                        "confidence": ip_conf,
+                        "is_probable_origin": is_prob_orig,
                     },
-                    is_origin=ip_rec.is_probable_origin,
+                    is_origin=is_prob_orig,
                 )
 
-        if self.analysis.probable_origin_ip:
-            orig_ip, version, is_priv = self.normalize_ip(self.analysis.probable_origin_ip)
+        if self.probable_origin_ip:
+            orig_ip, version, is_priv = self.normalize_ip(self.probable_origin_ip)
             if orig_ip:
                 ip_id = f"ip:{orig_ip}"
                 self._add_entity(
                     entity_id=ip_id,
-                    entity_type="IP",
+                    entity_type="IPAddress",
                     display_label=orig_ip,
                     normalized_value=orig_ip,
                     evidence_reference="email_analyses:probable_origin_ip",
                     properties={
+                        "ip": orig_ip,
+                        "source": "received_header",
                         "ip_version": version,
                         "is_private": is_priv,
                         "is_probable_origin": True,
-                        "confidence": self.analysis.probable_origin_confidence or 0.85,
-                        "source": self.analysis.probable_origin_source,
+                        "confidence": self.probable_origin_confidence or 0.85,
+                        "origin_source": self.probable_origin_source,
                     },
                     is_origin=True,
                 )
 
         # 6. Attachments & Cryptographic Hashes
-        for att in self.analysis.attachments:
-            norm_sha = self.normalize_hash(att.sha256)
+        for att in self.attachments:
+            att_sha = getattr(att, "sha256", "") if not isinstance(att, dict) else att.get("sha256", "")
+            att_name = getattr(att, "filename", "attachment") if not isinstance(att, dict) else att.get("filename", "attachment")
+            att_id_ref = getattr(att, "id", None) if not isinstance(att, dict) else att.get("id")
+            att_type = getattr(att, "content_type", "application/octet-stream") if not isinstance(att, dict) else att.get("content_type", "application/octet-stream")
+            att_size = getattr(att, "size_bytes", 0) or getattr(att, "size", 0) if not isinstance(att, dict) else (att.get("size_bytes") or att.get("size", 0))
+            is_exec = getattr(att, "is_executable", False) if not isinstance(att, dict) else att.get("is_executable", False)
+            is_susp = getattr(att, "is_suspicious", False) if not isinstance(att, dict) else att.get("is_suspicious", False)
+            is_dbl = getattr(att, "is_double_extension", False) if not isinstance(att, dict) else att.get("is_double_extension", False)
+            signals = getattr(att, "detected_signals", []) if not isinstance(att, dict) else att.get("detected_signals", [])
+
+            norm_sha = self.normalize_hash(att_sha)
+            if not norm_sha:
+                norm_sha = hashlib.sha256((att_name or "unknown").encode("utf-8")).hexdigest()
+
             att_id = f"attachment:{norm_sha}"
-            att_label = att.filename or "attachment"
+            att_label = att_name or "attachment"
+            suspicious_att = bool(is_susp) or bool(is_exec) or bool(is_dbl)
+
             self._add_entity(
                 entity_id=att_id,
                 entity_type="Attachment",
                 display_label=att_label,
-                normalized_value=att.filename,
-                evidence_reference=f"email_attachments:{att.id}",
+                normalized_value=att_name,
+                evidence_reference=f"email_attachments:{att_id_ref or norm_sha}",
                 properties={
-                    "filename": att.filename,
-                    "content_type": att.content_type,
-                    "size_bytes": att.size_bytes or 0,
                     "sha256": norm_sha,
-                    "is_executable": bool(att.is_executable),
-                    "is_suspicious": bool(att.is_suspicious),
-                    "is_double_extension": bool(att.is_double_extension),
-                    "detected_signals": att.detected_signals or [],
+                    "filename": att_name,
+                    "content_type": att_type,
+                    "size": att_size,
+                    "size_bytes": att_size,
+                    "is_suspicious": suspicious_att,
+                    "is_executable": bool(is_exec),
+                    "is_double_extension": bool(is_dbl),
+                    "detected_signals": signals or [],
                 },
-                is_suspicious=bool(att.is_suspicious) or bool(att.is_executable) or bool(att.is_double_extension),
+                is_suspicious=suspicious_att,
             )
 
             # Cryptographic FileHash Node
-            if norm_sha:
-                hash_id = f"file_hash:{norm_sha}"
-                self._add_entity(
-                    entity_id=hash_id,
-                    entity_type="FileHash",
-                    display_label=f"{norm_sha[:16]}...",
-                    normalized_value=norm_sha,
-                    evidence_reference=f"email_attachments:{att.id}",
-                    properties={
-                        "sha256": norm_sha,
-                        "algorithm": "sha256",
-                    },
-                    is_suspicious=bool(att.is_suspicious) or bool(att.is_executable),
-                )
+            hash_id = f"file_hash:{norm_sha}"
+            self._add_entity(
+                entity_id=hash_id,
+                entity_type="FileHash",
+                display_label=f"{norm_sha[:16]}...",
+                normalized_value=norm_sha,
+                evidence_reference=f"email_attachments:{att_id_ref or norm_sha}",
+                properties={
+                    "sha256": norm_sha,
+                    "algorithm": "sha256",
+                },
+                is_suspicious=suspicious_att,
+            )
 
         return list(self._entities.values())

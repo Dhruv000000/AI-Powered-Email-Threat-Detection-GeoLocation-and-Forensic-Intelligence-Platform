@@ -11,6 +11,8 @@ from app.db.models.email_analysis import (
     AnalysisReasonModel,
 )
 from app.db.models.investigation import (
+    Investigation,
+    InvestigationFinding,
     InvestigationModel,
     InvestigationFindingModel,
     InvestigationEntityRefModel,
@@ -29,6 +31,8 @@ __all__ = [
     "EmailAttachmentModel",
     "EmailIndicatorModel",
     "AnalysisReasonModel",
+    "Investigation",
+    "InvestigationFinding",
     "InvestigationModel",
     "InvestigationFindingModel",
     "InvestigationEntityRefModel",

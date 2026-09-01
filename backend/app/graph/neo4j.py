@@ -42,6 +42,8 @@ class Neo4jGraphStore:
                 self.uri,
                 auth=(self.username, self.password),
                 max_connection_lifetime=settings.NEO4J_MAX_CONNECTION_LIFETIME,
+                connection_acquisition_timeout=settings.NEO4J_CONNECTION_TIMEOUT,
+                connection_timeout=settings.NEO4J_CONNECTION_TIMEOUT,
             )
             # Verify connectivity immediately
             self._driver.verify_connectivity()

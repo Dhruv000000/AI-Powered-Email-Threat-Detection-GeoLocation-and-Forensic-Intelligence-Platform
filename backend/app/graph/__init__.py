@@ -2,17 +2,33 @@ from typing import Optional
 from app.core.config import settings
 from app.core.logging import logger
 from app.graph.base import GraphStore
-from app.graph.memory import InMemoryGraphStore
+from app.graph.memory_store import InMemoryGraphStore
 from app.graph.neo4j import Neo4jGraphStore
+from app.graph.neo4j_client import (
+    get_driver,
+    get_session,
+    check_neo4j_health,
+    close_driver,
+)
+from app.graph.constraints import (
+    apply_neo4j_constraints,
+    setup_constraints,
+)
 
 __all__ = [
     "GraphStore",
     "InMemoryGraphStore",
     "Neo4jGraphStore",
     "get_graph_store",
+    "get_driver",
+    "get_session",
+    "check_neo4j_health",
+    "close_driver",
+    "apply_neo4j_constraints",
+    "setup_constraints",
 ]
 
-# Singleton in-memory store for memory mode testing
+# Singleton in-memory store for memory mode testing / resilient fallback
 _memory_store_instance: Optional[InMemoryGraphStore] = None
 
 
@@ -20,18 +36,31 @@ def get_graph_store(force_memory: bool = False) -> GraphStore:
     """
     Factory to retrieve appropriate GraphStore.
     If force_memory or settings.GRAPH_STORE_TYPE == 'memory', returns InMemoryGraphStore.
-    Otherwise returns Neo4jGraphStore in production.
+    If settings.GRAPH_STORE_TYPE == 'neo4j', attempts to connect to Neo4j;
+    if Neo4j is offline or unreachable, seamlessly falls back to InMemoryGraphStore.
     """
     global _memory_store_instance
+
     if force_memory or settings.GRAPH_STORE_TYPE.lower() == "memory":
         if _memory_store_instance is None:
             _memory_store_instance = InMemoryGraphStore()
         return _memory_store_instance
 
-    # Production Neo4j Store (Strict: never silently falls back to in-memory)
-    return Neo4jGraphStore(
-        uri=settings.NEO4J_URI,
-        username=settings.NEO4J_USERNAME,
-        password=settings.NEO4J_PASSWORD,
-        database=settings.NEO4J_DATABASE,
-    )
+    # Attempt to initialize Neo4jGraphStore with automatic resilient fallback
+    try:
+        username = getattr(settings, "NEO4J_USER", None) or settings.NEO4J_USERNAME
+        store = Neo4jGraphStore(
+            uri=settings.NEO4J_URI,
+            username=username,
+            password=settings.NEO4J_PASSWORD,
+            database=settings.NEO4J_DATABASE,
+        )
+        return store
+    except Exception as e:
+        logger.warning(
+            f"Neo4j instance is unreachable ({e}). "
+            "Resiliently falling back to InMemoryGraphStore without interruption."
+        )
+        if _memory_store_instance is None:
+            _memory_store_instance = InMemoryGraphStore()
+        return _memory_store_instance

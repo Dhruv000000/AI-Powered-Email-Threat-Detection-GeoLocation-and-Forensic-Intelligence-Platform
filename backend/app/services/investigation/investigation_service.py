@@ -174,13 +174,15 @@ class InvestigationService:
         for f in findings:
             fnd_rec = InvestigationFindingModel(
                 investigation_id=investigation.investigation_id,
-                finding_id=f["finding_id"],
-                reason_code=f["reason_code"],
+                finding_id=f.get("finding_id"),
+                finding_code=f.get("finding_code") or f.get("reason_code") or "SUSPICIOUS_PATTERN",
+                reason_code=f.get("reason_code") or f.get("finding_code"),
                 title=f["title"],
                 severity=f.get("severity", "medium"),
                 description=f["description"],
                 confidence=f.get("confidence", 0.8),
                 evidence_references=f.get("evidence_references", []),
+                evidence_json=f.get("evidence_references", []),
                 entity_ids=f.get("entity_ids", []),
                 relationship_ids=f.get("relationship_ids", []),
             )
@@ -195,6 +197,10 @@ class InvestigationService:
         investigation.severity = summary_dict.get("severity")
         investigation.ai_confidence = summary_dict.get("ai_confidence")
         investigation.investigation_confidence = summary_dict.get("investigation_confidence", 0.0)
+        investigation.summary = summary_dict.get("executive_summary")
+        investigation.node_count = len(entities)
+        investigation.edge_count = len(relationships)
+        investigation.threat_path_count = len(summary_dict.get("key_threat_paths", []))
         investigation.summary_json = summary_dict
         investigation.completed_at = datetime.now(timezone.utc)
         investigation.updated_at = datetime.now(timezone.utc)

@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy import (
@@ -14,25 +13,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-def generate_uuid() -> str:
-    return str(uuid.uuid4())
-
-
 def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class InvestigationModel(Base):
+class Investigation(Base):
     __tablename__ = "investigations"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     analysis_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("email_analyses.analysis_id", ondelete="CASCADE"), index=True, nullable=False
+        String(64), ForeignKey("email_analyses.analysis_id", ondelete="CASCADE"), unique=True, index=True, nullable=False
     )
 
     # Status: created, processing, completed, failed
     status: Mapped[str] = mapped_column(String(32), default="created", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    node_count: Mapped[int] = mapped_column(Integer, default=0)
+    edge_count: Mapped[int] = mapped_column(Integer, default=0)
+    threat_path_count: Mapped[int] = mapped_column(Integer, default=0)
+
     # Lifecycle stages: loading_analysis, building_entities, building_relationships,
     # syncing_graph, generating_findings, generating_paths, generating_summary, completed
     stage: Mapped[str] = mapped_column(String(64), default="loading_analysis")
@@ -63,8 +63,8 @@ class InvestigationModel(Base):
     analysis: Mapped["EmailAnalysisModel"] = relationship(  # noqa: F821
         "EmailAnalysisModel", foreign_keys=[analysis_id], lazy="joined"
     )
-    findings: Mapped[List["InvestigationFindingModel"]] = relationship(
-        "InvestigationFindingModel", back_populates="investigation", cascade="all, delete-orphan", order_by="InvestigationFindingModel.created_at"
+    findings: Mapped[List["InvestigationFinding"]] = relationship(
+        "InvestigationFinding", back_populates="investigation", cascade="all, delete-orphan", order_by="InvestigationFinding.created_at"
     )
     entity_refs: Mapped[List["InvestigationEntityRefModel"]] = relationship(
         "InvestigationEntityRefModel", back_populates="investigation", cascade="all, delete-orphan"
@@ -77,35 +77,45 @@ class InvestigationModel(Base):
     )
 
 
-class InvestigationFindingModel(Base):
+# Backward-compatible alias
+InvestigationModel = Investigation
+
+
+class InvestigationFinding(Base):
     __tablename__ = "investigation_findings"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
 
-    finding_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    reason_code: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    finding_code: Mapped[str] = mapped_column(String(64), index=True, nullable=False, default="SUSPICIOUS_PATTERN")
     severity: Mapped[str] = mapped_column(String(32), default="medium")  # low, moderate, medium, high, critical
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence: Mapped[float] = mapped_column(Float, default=0.8)
+    evidence_json: Mapped[Optional[Any]] = mapped_column(JSON, default=list, nullable=True)
 
-    # Provenance & Traceability
-    evidence_references: Mapped[List[str]] = mapped_column(JSON, default=list)
-    entity_ids: Mapped[List[str]] = mapped_column(JSON, default=list)
-    relationship_ids: Mapped[List[str]] = mapped_column(JSON, default=list)
+    # Backward-compatible fields
+    finding_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    reason_code: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.8)
+    evidence_references: Mapped[Optional[List[str]]] = mapped_column(JSON, default=list)
+    entity_ids: Mapped[Optional[List[str]]] = mapped_column(JSON, default=list)
+    relationship_ids: Mapped[Optional[List[str]]] = mapped_column(JSON, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
 
-    investigation: Mapped["InvestigationModel"] = relationship("InvestigationModel", back_populates="findings")
+    investigation: Mapped["Investigation"] = relationship("Investigation", back_populates="findings")
+
+
+# Backward-compatible alias
+InvestigationFindingModel = InvestigationFinding
 
 
 class InvestigationEntityRefModel(Base):
     __tablename__ = "investigation_entity_refs"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -122,13 +132,13 @@ class InvestigationEntityRefModel(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
 
-    investigation: Mapped["InvestigationModel"] = relationship("InvestigationModel", back_populates="entity_refs")
+    investigation: Mapped["Investigation"] = relationship("Investigation", back_populates="entity_refs")
 
 
 class InvestigationRelationshipRefModel(Base):
     __tablename__ = "investigation_relationship_refs"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -145,21 +155,21 @@ class InvestigationRelationshipRefModel(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now)
 
-    investigation: Mapped["InvestigationModel"] = relationship("InvestigationModel", back_populates="relationship_refs")
+    investigation: Mapped["Investigation"] = relationship("Investigation", back_populates="relationship_refs")
 
 
 class InvestigationAuditLogModel(Base):
     __tablename__ = "investigation_audit_log"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
 
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    action: Mapped[str] = mapped_column(String(64), nullable=False)  # investigation_created, investigation_viewed, finding_viewed, entity_viewed, graph_viewed, path_viewed
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     details: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now, index=True)
 
-    investigation: Mapped["InvestigationModel"] = relationship("InvestigationModel", back_populates="audit_logs")
+    investigation: Mapped["Investigation"] = relationship("Investigation", back_populates="audit_logs")
