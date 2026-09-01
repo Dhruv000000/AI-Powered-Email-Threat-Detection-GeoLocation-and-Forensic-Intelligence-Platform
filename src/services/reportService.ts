@@ -1,27 +1,78 @@
-import { ForensicReport } from '../types/report';
+import { DFIRReport, ForensicReport } from '../types/report';
 import { mockReportsList } from '../mock/mockReports';
 
-class ReportService {
-  private reports: ForensicReport[] = [...mockReportsList];
+const API_BASE = '/api/v1';
 
+export const reportService = {
+  /**
+   * Fetch the complete structured DFIR executive report for an investigation or analysis.
+   */
+  async getInvestigationReport(targetId: string): Promise<DFIRReport> {
+    const res = await fetch(`${API_BASE}/investigations/${targetId}/report`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail?.message || `Failed to fetch DFIR report for ID '${targetId}'`);
+    }
+    return res.json();
+  },
+
+  /**
+   * Stream and trigger download of the official branded PDF report document.
+   */
+  async downloadReportPdf(targetId: string, customFilename?: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/investigations/${targetId}/export/pdf`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail?.message || `Failed to export PDF report for '${targetId}'`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = customFilename || `AEGIS_DFIR_Report_${targetId.replace(/ /g, '_')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  /**
+   * Export deduplicated Indicators of Compromise (IoC) in CSV format.
+   */
+  async downloadIocsCsv(targetId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/investigations/${targetId}/export/iocs?format=csv`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail?.message || `Failed to export IoCs for '${targetId}'`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AEGIS_IoCs_${targetId.replace(/ /g, '_')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  /**
+   * Case-level reports methods for legacy / case views
+   */
   async getReports(): Promise<ForensicReport[]> {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    return [...this.reports];
-  }
+    return Promise.resolve([...mockReportsList]);
+  },
 
-  async getReportById(id: string): Promise<ForensicReport | null> {
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const found = this.reports.find((r) => r.id === id || r.caseId === id);
-    return found ? { ...found } : null;
-  }
+  async getReportById(caseId: string): Promise<ForensicReport | undefined> {
+    return Promise.resolve(mockReportsList.find((r) => r.caseId === caseId) || mockReportsList[0]);
+  },
 
-  async generateReport(caseId: string, caseTitle: string): Promise<ForensicReport> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  async generateReport(caseId: string, title: string): Promise<ForensicReport> {
     const newReport: ForensicReport = {
-      id: `RPT-2026-${String(this.reports.length + 90).padStart(3, '0')}`,
+      id: `RPT-2026-${Math.floor(100 + Math.random() * 900)}`,
       caseId,
-      caseTitle,
-      generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+      caseTitle: title,
+      generatedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
       generatedBy: {
         name: 'Dhruv Sharma',
         role: 'Lead Forensic Investigator',
@@ -30,27 +81,25 @@ class ReportService {
       classification: 'RESTRICTED / LAW ENFORCEMENT',
       status: 'Ready',
       fileFormat: 'PDF',
-      summary: `Automated forensic intelligence summary compiled for ${caseId} (${caseTitle}). Correlated multi-hop email relay anomalies and verified cryptographic integrity.`,
+      summary: `Automated DFIR intelligence dossier generated for case ${caseId}. Includes full entity graph triangulation, header hop routes, and MITRE ATT&CK technique mapping.`,
       primaryThreatType: 'Business Email Compromise (BEC)',
-      riskScore: 95,
-      attributionAssessment: 'High-confidence correlation with known adversary infrastructure clusters.',
-      totalEmailsInvolved: 2,
-      totalIndicatorsExtracted: 7,
-      evidenceItemsCount: 3,
+      riskScore: 92,
+      attributionAssessment: 'High confidence forensic attribution from automated heuristics and hop telemetry.',
+      totalEmailsInvolved: 3,
+      totalIndicatorsExtracted: 8,
+      evidenceItemsCount: 4,
       findings: [
-        'SPF/DKIM/DMARC authentication failed.',
-        'Suspicious originating IP hop located in bulletproof hosting network.',
-        'Urgent financial settlement cues detected via natural language processing.',
+        'DMARC & SPF authentication failed on primary originating MTA.',
+        'High-risk lookalike hostname detected in outbound links.',
+        'First public transit node matches active Tor relay address.',
       ],
       recommendedMitigations: [
-        'Enforce DNS block for discovered lookalike domains.',
-        'Deploy gateway-level attachment quarantine rules for suspicious extensions.',
+        'Enforce tenant-wide domain transport rejection for origin IP.',
+        'Reset user credentials and invalidate active OAuth tokens.',
+        'Submit automated domain takedown notification.',
       ],
     };
-
-    this.reports.unshift(newReport);
-    return newReport;
-  }
-}
-
-export const reportService = new ReportService();
+    mockReportsList.unshift(newReport);
+    return Promise.resolve(newReport);
+  },
+};

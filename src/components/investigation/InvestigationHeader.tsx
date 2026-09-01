@@ -21,6 +21,7 @@ interface InvestigationHeaderProps {
   onRefresh: () => void;
   onOpenSearch: () => void;
   onOpenThreatMap?: () => void;
+  onOpenReport?: () => void;
   isRefreshing?: boolean;
 }
 
@@ -29,6 +30,7 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
   onRefresh,
   onOpenSearch,
   onOpenThreatMap,
+  onOpenReport,
   isRefreshing = false,
 }) => {
   const navigate = useNavigate();
@@ -168,19 +170,23 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
 
             <button
               onClick={() => {
-                const jsonStr = `data:text/json;charset=utf-8,${encodeURIComponent(
-                  JSON.stringify(investigation, null, 2)
-                )}`;
-                const a = document.createElement('a');
-                a.href = jsonStr;
-                a.download = `${investigation.investigation_id}-evidence-report.json`;
-                a.click();
+                if (onOpenReport) {
+                  onOpenReport();
+                } else {
+                  const jsonStr = `data:text/json;charset=utf-8,${encodeURIComponent(
+                    JSON.stringify(investigation, null, 2)
+                  )}`;
+                  const a = document.createElement('a');
+                  a.href = jsonStr;
+                  a.download = `${investigation.investigation_id}-evidence-report.json`;
+                  a.click();
+                }
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-purple-950/60 hover:bg-purple-900/60 border border-purple-800/50 text-purple-300 text-xs font-mono transition"
-              title="Export DFIR Investigation Report"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-purple-950/60 hover:bg-purple-900/60 border border-purple-800/50 text-purple-300 text-xs font-mono font-bold transition shadow-sm"
+              title="Open DFIR Report & Export PDF/IoCs"
             >
               <FileDown className="w-3.5 h-3.5" />
-              <span>Export</span>
+              <span>DFIR Report</span>
             </button>
           </div>
         </div>

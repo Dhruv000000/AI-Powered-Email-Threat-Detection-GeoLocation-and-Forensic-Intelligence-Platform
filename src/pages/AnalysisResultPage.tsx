@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   MapPin,
   GitFork,
+  FileDown,
   ExternalLink,
   ChevronRight,
   HelpCircle,
@@ -28,6 +29,7 @@ import { IPIntelligenceCard } from '../components/analysis/IPIntelligenceCard';
 import { FeatureContributionBar } from '../components/analysis/FeatureContributionBar';
 import { EvidenceLocker } from '../components/analysis/EvidenceLocker';
 import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
+import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
 import { LoadingState } from '../components/common/LoadingState';
 
 export const AnalysisResultPage: React.FC = () => {
@@ -39,6 +41,7 @@ export const AnalysisResultPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'headers' | 'urls' | 'infrastructure' | 'ai' | 'evidence'>('overview');
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchEmail() {
@@ -151,6 +154,14 @@ export const AnalysisResultPage: React.FC = () => {
 
         {/* Pivot actions */}
         <div className="flex items-center gap-2 font-mono text-xs">
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded transition font-bold shadow-md shadow-blue-900/30"
+            title="Open DFIR Executive Report, MITRE Matrix & PDF Exporter"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>DFIR Report</span>
+          </button>
           <button
             onClick={() => navigate(`/investigations/${email.id}`)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-950/80 hover:bg-purple-900 text-purple-200 border border-purple-800 rounded transition font-bold shadow-sm"
@@ -399,6 +410,13 @@ export const AnalysisResultPage: React.FC = () => {
         investigationId={email.id}
         isOpen={isMapModalOpen}
         onClose={() => setIsMapModalOpen(false)}
+      />
+
+      {/* DFIR Executive Report & Playbook Modal */}
+      <DFIRReportModal
+        investigationId={email.id}
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
       />
     </div>
   );

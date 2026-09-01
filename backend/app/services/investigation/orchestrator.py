@@ -2,6 +2,7 @@ import hashlib
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import logger
 from app.db.models.email_analysis import EmailAnalysisModel
@@ -16,6 +17,54 @@ from app.services.investigation.summary_generator import SummaryEngine
 from app.services.investigation.graph_service import GraphService
 from app.services.investigation.investigation_service import InvestigationService
 from app.schemas.investigation import InvestigationDetailResponse, InvestigationResponse
+
+
+def get_or_create_investigation(
+    analysis_id: str,
+    db: Session,
+    user_id: str = "usr-analyst-001",
+) -> InvestigationModel:
+    """
+    Robust atomic helper to retrieve or create an investigation record,
+    catching database integrity concurrency race conditions safely.
+    """
+    # 1. First attempt to fetch existing
+    existing = (
+        db.query(InvestigationModel)
+        .filter((InvestigationModel.analysis_id == analysis_id) | (InvestigationModel.investigation_id == analysis_id))
+        .first()
+    )
+    if existing:
+        return existing
+
+    # 2. If not found, attempt creation inside a safe transaction block
+    hash_suffix = hashlib.sha256(analysis_id.encode("utf-8")).hexdigest()[:6].upper()
+    generated_id = f"INV-{analysis_id.replace('ANL-', '')}-{hash_suffix}"
+
+    try:
+        new_inv = InvestigationModel(
+            investigation_id=generated_id,
+            analysis_id=analysis_id,
+            status="created",
+            stage="loading_analysis",
+            progress=5,
+            created_by=user_id,
+        )
+        db.add(new_inv)
+        db.commit()
+        db.refresh(new_inv)
+        return new_inv
+    except IntegrityError:
+        db.rollback()
+        # Concurrency race: Another worker/request inserted it in the exact same millisecond
+        existing = (
+            db.query(InvestigationModel)
+            .filter((InvestigationModel.analysis_id == analysis_id) | (InvestigationModel.investigation_id == analysis_id))
+            .first()
+        )
+        if existing:
+            return existing
+        raise
 
 
 class InvestigationOrchestrator:
@@ -86,26 +135,22 @@ class InvestigationOrchestrator:
                 f"Task 01 analysis must be in 'completed' state."
             )
 
-        # 2. Idempotency Check
-        existing_inv = self.inv_service.get_by_analysis_id(target_analysis_id)
-        if existing_inv and not force_reinvestigation:
-            if existing_inv.status == "completed":
-                logger.info(f"Idempotent hit: returning existing completed investigation '{existing_inv.investigation_id}'.")
-                return self.inv_service.build_detail_dto(existing_inv)
+        # 2. Atomic Idempotency Check & Record Creation
+        generated_id = self._generate_investigation_id(target_analysis_id)
+        inv_record, was_created = self.inv_service.get_or_create_investigation(
+            analysis_id=target_analysis_id,
+            investigation_id=generated_id,
+            created_by=created_by,
+        )
+        investigation_id = inv_record.investigation_id
 
-        # 3. Create or Reset Investigation Record
-        if existing_inv:
-            inv_record = existing_inv
-            investigation_id = inv_record.investigation_id
+        if not was_created and not force_reinvestigation:
+            if inv_record.status == "completed":
+                logger.info(f"Idempotent hit: returning existing completed investigation '{investigation_id}'.")
+                return self.inv_service.build_detail_dto(inv_record)
+
+        if not was_created:
             self.inv_service.update_stage(inv_record, stage="loading_analysis", progress=10, status="processing")
-        else:
-            generated_id = self._generate_investigation_id(target_analysis_id)
-            inv_record = self.inv_service.create_investigation_record(
-                analysis_id=target_analysis_id,
-                investigation_id=generated_id,
-                created_by=created_by,
-            )
-            investigation_id = inv_record.investigation_id
 
         try:
             # 4. Stage: building_entities

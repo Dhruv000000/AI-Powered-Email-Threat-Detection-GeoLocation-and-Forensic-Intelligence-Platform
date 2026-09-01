@@ -49,6 +49,13 @@ from app.schemas.geo import (
     ThreatMapHopDTO,
     ThreatMapResponse,
 )
+from app.schemas.report import (
+    MitreTechniqueDTO,
+    RemediationActionDTO,
+    IoCItemDTO,
+    ExecutiveSummaryDTO,
+    DFIRReportDTO,
+)
 
 __all__ = [
     "EmailMetadataSchema",
@@ -93,4 +100,9 @@ __all__ = [
     "GeoLookupResponse",
     "ThreatMapHopDTO",
     "ThreatMapResponse",
+    "MitreTechniqueDTO",
+    "RemediationActionDTO",
+    "IoCItemDTO",
+    "ExecutiveSummaryDTO",
+    "DFIRReportDTO",
 ]

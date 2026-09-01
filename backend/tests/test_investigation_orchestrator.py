@@ -124,3 +124,58 @@ def test_investigation_handles_graph_failure_gracefully(db_session):
     assert inv_rec is not None
     assert inv_rec.status == "failed"
     assert inv_rec.error_code == "NEO4J_UNAVAILABLE"
+
+
+def test_get_or_create_investigation_atomic_helper(db_session):
+    analysis_id = "ANL-ATOMIC-001"
+    analysis = _seed_completed_analysis(db_session, analysis_id)
+
+    from app.services.investigation.orchestrator import get_or_create_investigation
+    inv1 = get_or_create_investigation(analysis_id, db=db_session, user_id="usr-test-1")
+    assert inv1 is not None
+    assert inv1.analysis_id == analysis_id
+    assert inv1.investigation_id.startswith("INV-")
+
+    # Second call should idempotently return the exact same investigation record
+    inv2 = get_or_create_investigation(analysis_id, db=db_session, user_id="usr-test-2")
+    assert inv2.id == inv1.id
+    assert inv2.investigation_id == inv1.investigation_id
+
+
+def test_concurrent_investigation_creation_race_condition(db_session):
+    """
+    Simulates concurrent race condition where multiple requests attempt to create
+    an investigation for the same analysis_id at the exact same moment.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from app.db.session import SessionLocal
+    from app.services.investigation.orchestrator import get_or_create_investigation
+
+    analysis_id = "ANL-RACE-002"
+    _seed_completed_analysis(db_session, analysis_id)
+
+    results = []
+    errors = []
+
+    def _worker(thread_idx: int):
+        session = SessionLocal()
+        try:
+            inv = get_or_create_investigation(analysis_id, db=session, user_id=f"usr-worker-{thread_idx}")
+            results.append(inv.investigation_id)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            session.close()
+
+    # Launch 8 simultaneous threads
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_worker, i) for i in range(8)]
+        for f in futures:
+            f.result()
+
+    # Zero errors should occur
+    assert len(errors) == 0, f"Encountered unexpected errors during concurrent creation: {errors}"
+    assert len(results) == 8
+    # All 8 threads must have resolved to the same unique investigation_id
+    assert len(set(results)) == 1
+

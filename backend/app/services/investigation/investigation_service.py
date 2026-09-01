@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models.investigation import (
     InvestigationModel,
@@ -35,6 +36,60 @@ class InvestigationService:
     def get_by_analysis_id(self, analysis_id: str) -> Optional[InvestigationModel]:
         stmt = select(InvestigationModel).where(InvestigationModel.analysis_id == analysis_id)
         return self.db.execute(stmt).scalars().first()
+
+    def get_or_create_investigation(
+        self,
+        analysis_id: str,
+        investigation_id: Optional[str] = None,
+        created_by: str = "usr-analyst-001",
+    ) -> Tuple[InvestigationModel, bool]:
+        """
+        Atomically fetch or create an investigation record, handling concurrent race conditions safely.
+        Returns (investigation_record, created_boolean).
+        """
+        # 1. First attempt to fetch existing
+        existing = (
+            self.db.query(InvestigationModel)
+            .filter((InvestigationModel.analysis_id == analysis_id) | (InvestigationModel.investigation_id == analysis_id))
+            .first()
+        )
+        if existing:
+            return existing, False
+
+        effective_inv_id = investigation_id or f"INV-{analysis_id.replace('ANL-', '')}"
+
+        # 2. Attempt creation inside a safe transaction block
+        try:
+            record = InvestigationModel(
+                investigation_id=effective_inv_id,
+                analysis_id=analysis_id,
+                status="created",
+                stage="loading_analysis",
+                progress=5,
+                created_by=created_by,
+            )
+            self.db.add(record)
+            self.db.commit()
+            self.db.refresh(record)
+
+            self.log_audit_event(
+                investigation_id=effective_inv_id,
+                user_id=created_by,
+                action="investigation_created",
+                details={"analysis_id": analysis_id},
+            )
+            return record, True
+        except IntegrityError:
+            self.db.rollback()
+            # Concurrency race: Another worker/request inserted it in the exact same millisecond
+            existing = (
+                self.db.query(InvestigationModel)
+                .filter((InvestigationModel.analysis_id == analysis_id) | (InvestigationModel.investigation_id == analysis_id))
+                .first()
+            )
+            if existing:
+                return existing, False
+            raise
 
     def list_investigations(
         self,
@@ -81,32 +136,10 @@ class InvestigationService:
         investigation_id: str,
         created_by: str = "usr-analyst-001",
     ) -> InvestigationModel:
-        existing = self.get_by_analysis_id(analysis_id) or self.get_by_investigation_id(investigation_id)
-        if existing:
-            existing.status = "created"
-            existing.stage = "loading_analysis"
-            existing.progress = 5
-            existing.updated_at = datetime.now(timezone.utc)
-            self.db.commit()
-            return existing
-
-        record = InvestigationModel(
-            investigation_id=investigation_id,
+        record, _ = self.get_or_create_investigation(
             analysis_id=analysis_id,
-            status="created",
-            stage="loading_analysis",
-            progress=5,
-            created_by=created_by,
-        )
-        self.db.add(record)
-        self.db.commit()
-        self.db.refresh(record)
-
-        self.log_audit_event(
             investigation_id=investigation_id,
-            user_id=created_by,
-            action="investigation_created",
-            details={"analysis_id": analysis_id},
+            created_by=created_by,
         )
         return record
 

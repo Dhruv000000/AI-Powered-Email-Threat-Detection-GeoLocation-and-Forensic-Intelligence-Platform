@@ -4,10 +4,12 @@ from fastapi import (
     Depends,
     Query,
     HTTPException,
+    Response,
     status,
 )
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import logger
 from app.db.session import get_db
@@ -34,6 +36,9 @@ from app.services.investigation.relationship_builder import RelationshipBuilder
 from app.services.investigation.paths_engine import ThreatPathEngine
 from app.services.investigation.threat_map_service import ThreatMapService
 from app.schemas.geo import ThreatMapResponse
+from app.schemas.report import DFIRReportDTO, IoCItemDTO
+from app.services.investigation.report_service import DFIRReportService
+from app.services.export.pdf_exporter import PDFReportExporter
 from app.workers.investigation_worker import enqueue_investigation_job
 
 router = APIRouter(prefix="/investigations", tags=["Email Threat Investigation Engine"])
@@ -129,6 +134,20 @@ def create_investigation(
             created_by=current_user.id,
         )
         return result
+    except IntegrityError:
+        db.rollback()
+        existing = (
+            db.query(InvestigationModel)
+            .filter((InvestigationModel.analysis_id == analysis_id) | (InvestigationModel.investigation_id == analysis_id))
+            .first()
+        )
+        if existing:
+            inv_service = InvestigationService(db)
+            return inv_service.build_detail_dto(existing)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "CONCURRENT_INVESTIGATION_RACE", "message": "Investigation is already being processed concurrently."},
+        )
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -619,3 +638,104 @@ def get_investigation_threat_map(
 
     threat_map_service = ThreatMapService(db)
     return threat_map_service.get_investigation_threat_map(investigation_id)
+
+
+@router.get(
+    "/{investigation_id}/report",
+    response_model=DFIRReportDTO,
+    summary="Generate DFIR Executive Report",
+    description="Synthesizes authoritative forensic report, MITRE ATT&CK matrix alignment, prioritized remediation checklist, and deduplicated IoC appendix.",
+)
+def get_investigation_report(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    inv_service = InvestigationService(db)
+    record = inv_service.get_by_investigation_id(investigation_id) or inv_service.get_by_analysis_id(investigation_id)
+    if record:
+        inv_service.log_audit_event(
+            investigation_id=record.investigation_id,
+            user_id=current_user.id,
+            action="dfir_report_generated",
+        )
+
+    report_service = DFIRReportService(db)
+    return report_service.generate_dfir_report(investigation_id)
+
+
+@router.get(
+    "/{investigation_id}/export/pdf",
+    summary="Export DFIR Executive Report as PDF",
+    description="Generates a branded, multi-page forensic executive report PDF document for download.",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Returns generated PDF binary stream",
+        }
+    },
+)
+def export_investigation_pdf(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    inv_service = InvestigationService(db)
+    record = inv_service.get_by_investigation_id(investigation_id) or inv_service.get_by_analysis_id(investigation_id)
+    if record:
+        inv_service.log_audit_event(
+            investigation_id=record.investigation_id,
+            user_id=current_user.id,
+            action="pdf_report_exported",
+        )
+
+    report_service = DFIRReportService(db)
+    report_dto = report_service.generate_dfir_report(investigation_id)
+
+    pdf_exporter = PDFReportExporter(report_dto)
+    pdf_bytes = pdf_exporter.generate_pdf()
+
+    clean_id = investigation_id.replace(" ", "_")
+    filename = f"AEGIS_DFIR_Report_{clean_id}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/pdf",
+        },
+    )
+
+
+@router.get(
+    "/{investigation_id}/export/iocs",
+    summary="Export Deduplicated IoCs (JSON/CSV)",
+    description="Exports threat indicators of compromise formatted for SIEM/SOAR/EDR ingestion.",
+)
+def export_investigation_iocs(
+    investigation_id: str,
+    format: str = Query("json", pattern="^(json|csv)$"),
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    report_service = DFIRReportService(db)
+    report_dto = report_service.generate_dfir_report(investigation_id)
+
+    if format == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Type", "Indicator Value", "Severity", "Killchain Stage", "Threat Context"])
+        for ioc in report_dto.iocs:
+            writer.writerow([ioc.ioc_type, ioc.value, ioc.severity, ioc.killchain_stage, ioc.threat_context])
+        
+        csv_data = output.getvalue()
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="AEGIS_IoCs_{investigation_id}.csv"'},
+        )
+
+    return {"investigation_id": investigation_id, "total_iocs": len(report_dto.iocs), "iocs": report_dto.iocs}
