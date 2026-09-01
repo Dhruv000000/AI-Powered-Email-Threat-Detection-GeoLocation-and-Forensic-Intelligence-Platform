@@ -32,6 +32,8 @@ from app.services.investigation.investigation_service import InvestigationServic
 from app.services.investigation.entity_builder import EntityBuilder
 from app.services.investigation.relationship_builder import RelationshipBuilder
 from app.services.investigation.paths_engine import ThreatPathEngine
+from app.services.investigation.threat_map_service import ThreatMapService
+from app.schemas.geo import ThreatMapResponse
 from app.workers.investigation_worker import enqueue_investigation_job
 
 router = APIRouter(prefix="/investigations", tags=["Email Threat Investigation Engine"])
@@ -593,3 +595,27 @@ def get_investigation_paths(
         total_paths=len(path_dtos),
         paths=path_dtos,
     )
+
+
+@router.get(
+    "/{investigation_id}/threat-map",
+    response_model=ThreatMapResponse,
+    summary="Get Investigation Threat Map & Relay Geo Routing",
+    description="Reconstructs geographic hop-by-hop SMTP relay transit path, calculates total distance, and identifies routing anomalies.",
+)
+def get_investigation_threat_map(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    inv_service = InvestigationService(db)
+    record = inv_service.get_by_investigation_id(investigation_id) or inv_service.get_by_analysis_id(investigation_id)
+    if record:
+        inv_service.log_audit_event(
+            investigation_id=record.investigation_id,
+            user_id=current_user.id,
+            action="threat_map_viewed",
+        )
+
+    threat_map_service = ThreatMapService(db)
+    return threat_map_service.get_investigation_threat_map(investigation_id)

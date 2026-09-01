@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   ShieldAlert,
   ArrowLeft,
@@ -10,6 +9,7 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InvestigationDetail } from '../../types/investigation';
@@ -20,6 +20,7 @@ interface InvestigationHeaderProps {
   investigation: InvestigationDetail;
   onRefresh: () => void;
   onOpenSearch: () => void;
+  onOpenThreatMap?: () => void;
   isRefreshing?: boolean;
 }
 
@@ -27,6 +28,7 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
   investigation,
   onRefresh,
   onOpenSearch,
+  onOpenThreatMap,
   isRefreshing = false,
 }) => {
   const navigate = useNavigate();
@@ -134,6 +136,17 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
 
           {/* Action Toolbar */}
           <div className="flex items-center gap-2">
+            {onOpenThreatMap && (
+              <button
+                onClick={onOpenThreatMap}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-200 text-xs font-mono font-bold transition shadow-sm"
+                title="View Geographic Relay Transit Threat Map"
+              >
+                <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                <span>Threat Map</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenSearch}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-[#151E2E] hover:bg-[#1E293B] border border-[#263244] text-gray-200 text-xs font-mono transition"

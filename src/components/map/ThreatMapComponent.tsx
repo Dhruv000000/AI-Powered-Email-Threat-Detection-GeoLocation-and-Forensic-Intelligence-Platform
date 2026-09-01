@@ -58,11 +58,23 @@ export const ThreatMapComponent: React.FC<ThreatMapComponentProps> = ({
 
       L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-      // Dark CartoDB tile layer with high contrast
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }).addTo(map);
+      // 1. Keyless Esri World Dark Gray Canvas Basemap
+      L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: '&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+          maxZoom: 16,
+        }
+      ).addTo(map);
+
+      // 2. Reference text overlay for City, State, and Country labels
+      L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        {
+          maxZoom: 16,
+          pane: 'overlayPane',
+        }
+      ).addTo(map);
 
       const markersGroup = L.layerGroup().addTo(map);
       markersLayerRef.current = markersGroup;

@@ -68,16 +68,19 @@ class HeaderAnalyzer:
             if proto_match:
                 protocol = proto_match.group(1)
 
-            # Extract IP from brackets [x.x.x.x]
-            ip_matches = cls._IP_PATTERN.findall(routing_part)
-            if ip_matches:
-                for cand in ip_matches:
-                    try:
-                        ip_obj = ipaddress.ip_address(cand)
-                        ip_str = str(ip_obj)
-                        break
-                    except ValueError:
-                        continue
+            # Extract IP from brackets [x.x.x.x], parentheses (x.x.x.x), or standalone tokens
+            candidate_ips = re.findall(r"\[([0-9a-fA-F\.:]+)\]|\(([0-9a-fA-F\.:]+)\)|\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b", routing_part)
+            for cand_tuple in candidate_ips:
+                cand = cand_tuple if isinstance(cand_tuple, str) else next((c for c in cand_tuple if c), "")
+                cand = cand.strip().strip("[]()")
+                if not cand:
+                    continue
+                try:
+                    ip_obj = ipaddress.ip_address(cand)
+                    ip_str = str(ip_obj)
+                    break
+                except ValueError:
+                    continue
 
             is_private = False
             if ip_str:

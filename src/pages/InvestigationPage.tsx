@@ -18,6 +18,7 @@ import { RelationshipDetailsDrawer } from '../components/investigation/Relations
 import { ThreatPathsSection } from '../components/investigation/ThreatPathsSection';
 import { InvestigationTimeline } from '../components/investigation/InvestigationTimeline';
 import { EntitySearchModal } from '../components/investigation/EntitySearchModal';
+import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { LoadingState } from '../components/common/LoadingState';
 import { AlertTriangle, RefreshCw, GitFork } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export const InvestigationPage: React.FC = () => {
   const [activeFinding, setActiveFinding] = useState<InvestigationFinding | null>(null);
   const [activePath, setActivePath] = useState<ThreatPath | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isThreatMapOpen, setIsThreatMapOpen] = useState(false);
 
   // Highlighted IDs on the Cytoscape graph
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
@@ -237,6 +239,7 @@ export const InvestigationPage: React.FC = () => {
         investigation={investigation}
         onRefresh={() => loadData(true)}
         onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenThreatMap={() => setIsThreatMapOpen(true)}
         isRefreshing={refreshing}
       />
 
@@ -306,6 +309,13 @@ export const InvestigationPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* Threat Route Map Modal */}
+      <ThreatMapModal
+        investigationId={investigation.investigation_id}
+        isOpen={isThreatMapOpen}
+        onClose={() => setIsThreatMapOpen(false)}
+      />
     </div>
   );
 };

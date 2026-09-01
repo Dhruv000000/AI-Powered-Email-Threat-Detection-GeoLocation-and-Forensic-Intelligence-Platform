@@ -42,6 +42,14 @@ from app.schemas.investigation import (
     InvestigationListItemResponse,
 )
 
+from app.schemas.geo import (
+    GeoLocationDTO,
+    GeoLookupRequest,
+    GeoLookupResponse,
+    ThreatMapHopDTO,
+    ThreatMapResponse,
+)
+
 __all__ = [
     "EmailMetadataSchema",
     "RelayHopSchema",
@@ -80,4 +88,9 @@ __all__ = [
     "InvestigationStatusResponse",
     "InvestigationDetailResponse",
     "InvestigationListItemResponse",
+    "GeoLocationDTO",
+    "GeoLookupRequest",
+    "GeoLookupResponse",
+    "ThreatMapHopDTO",
+    "ThreatMapResponse",
 ]

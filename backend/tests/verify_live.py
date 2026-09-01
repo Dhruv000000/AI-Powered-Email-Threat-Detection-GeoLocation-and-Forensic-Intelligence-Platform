@@ -62,15 +62,24 @@ def test_live_investigation():
     print("CONTAINS MICR0SOFT INDICATORS?:", has_ms)
     assert has_ms, "Did not find micr0soft in graph nodes!"
 
-    # 6. Check Threat Paths
-    req_paths = urllib.request.Request(f"http://127.0.0.1:8000/api/v1/investigations/{inv_id}/paths")
-    res_paths = urllib.request.urlopen(req_paths)
-    paths_data = json.loads(res_paths.read().decode("utf-8"))
-    print("PATHS COUNT:", paths_data.get("total_paths"))
-    for p in paths_data.get("paths", []):
-        print(" - PATH:", p.get("title"), "| Steps:", p.get("steps"))
+    # 7. Check Threat Map
+    req_map = urllib.request.Request(f"http://127.0.0.1:8000/api/v1/investigations/{inv_id}/threat-map")
+    res_map = urllib.request.urlopen(req_map)
+    map_data = json.loads(res_map.read().decode("utf-8"))
+    print("\n--- THREAT MAP TELEMETRY ---")
+    print("TOTAL DISTANCE:", map_data.get("total_distance_km"), "km")
+    print("HOPS COUNT:", len(map_data.get("hops", [])))
+    for h in map_data.get("hops", []):
+        loc = h.get("location") or {}
+        print(f" - Hop #{h.get('hop_number')}: {h.get('ip')} -> {loc.get('city')}, {loc.get('country_name')} (Lat: {loc.get('latitude')}, Lng: {loc.get('longitude')}) [Tor: {loc.get('is_tor')}]")
+    print("ANOMALIES:", map_data.get("anomalies"))
 
-    print("\nSUCCESS: All live investigation endpoints verified with genuine dynamic data!")
+    assert len(map_data.get("hops", [])) >= 1, "Expected at least 1 hop in threat map!"
+    geocoded_hops = [h for h in map_data.get("hops", []) if h.get("location", {}).get("latitude") is not None]
+    print("GEOCODED HOPS COUNT:", len(geocoded_hops))
+    assert len(geocoded_hops) >= 1, "Expected at least 1 geocoded hop!"
+
+    print("\nSUCCESS: All live investigation & threat map endpoints verified with genuine dynamic data!")
 
 if __name__ == "__main__":
     test_live_investigation()

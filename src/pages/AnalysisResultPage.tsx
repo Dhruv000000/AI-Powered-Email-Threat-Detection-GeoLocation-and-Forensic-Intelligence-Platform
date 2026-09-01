@@ -27,6 +27,7 @@ import { UrlAnalysisTable } from '../components/analysis/UrlAnalysisTable';
 import { IPIntelligenceCard } from '../components/analysis/IPIntelligenceCard';
 import { FeatureContributionBar } from '../components/analysis/FeatureContributionBar';
 import { EvidenceLocker } from '../components/analysis/EvidenceLocker';
+import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { LoadingState } from '../components/common/LoadingState';
 
 export const AnalysisResultPage: React.FC = () => {
@@ -37,6 +38,7 @@ export const AnalysisResultPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'headers' | 'urls' | 'infrastructure' | 'ai' | 'evidence'>('overview');
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchEmail() {
@@ -158,8 +160,9 @@ export const AnalysisResultPage: React.FC = () => {
             <span>Investigate Threat Graph</span>
           </button>
           <button
-            onClick={() => navigate('/map')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#151E2E] hover:bg-[#1E293B] text-gray-200 border border-[#263244] rounded transition"
+            onClick={() => setIsMapModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-950/80 hover:bg-blue-900 text-blue-200 border border-blue-800 rounded transition font-bold shadow-sm"
+            title="Trace Geographic Relay Transit & Origin Map"
           >
             <MapPin className="w-3.5 h-3.5 text-blue-400" />
             <span>Trace Origin Map</span>
@@ -390,6 +393,13 @@ export const AnalysisResultPage: React.FC = () => {
           <EvidenceLocker evidence={email.evidence} caseId={email.caseId} />
         )}
       </div>
+
+      {/* Trace Origin & Threat Route Map Modal */}
+      <ThreatMapModal
+        investigationId={email.id}
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+      />
     </div>
   );
 };

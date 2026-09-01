@@ -75,3 +75,14 @@
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: -0.025em;
 }
+
+/* Permanent tooltip label reset for Threat Map */
+.threat-map-permanent-label.leaflet-tooltip {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.threat-map-permanent-label.leaflet-tooltip::before {
+  display: none !important;
+}

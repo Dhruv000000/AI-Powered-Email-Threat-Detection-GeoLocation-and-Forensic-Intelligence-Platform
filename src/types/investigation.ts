@@ -192,3 +192,6 @@ export interface InvestigationListItem {
   finding_count: number;
   entity_count: number;
 }
+
+export type InvestigationListItemResponse = InvestigationListItem;
+
