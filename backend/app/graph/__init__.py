@@ -36,7 +36,7 @@ def get_graph_store(force_memory: bool = False) -> GraphStore:
     """
     Factory to retrieve appropriate GraphStore.
     If force_memory or settings.GRAPH_STORE_TYPE == 'memory', returns InMemoryGraphStore.
-    If settings.GRAPH_STORE_TYPE == 'neo4j', attempts to connect to Neo4j;
+    If settings.GRAPH_STORE_TYPE == 'neo4j', verifies health before connecting;
     if Neo4j is offline or unreachable, seamlessly falls back to InMemoryGraphStore.
     """
     global _memory_store_instance
@@ -46,8 +46,15 @@ def get_graph_store(force_memory: bool = False) -> GraphStore:
             _memory_store_instance = InMemoryGraphStore()
         return _memory_store_instance
 
-    # Attempt to initialize Neo4jGraphStore with automatic resilient fallback
+    # Check health before attempting Neo4j store initialization
     try:
+        is_healthy = check_neo4j_health()
+        if not is_healthy:
+            logger.info("Neo4j offline. Using InMemoryGraphStore resilient fallback.")
+            if _memory_store_instance is None:
+                _memory_store_instance = InMemoryGraphStore()
+            return _memory_store_instance
+
         username = getattr(settings, "NEO4J_USER", None) or settings.NEO4J_USERNAME
         store = Neo4jGraphStore(
             uri=settings.NEO4J_URI,

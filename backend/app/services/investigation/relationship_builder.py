@@ -64,9 +64,14 @@ class RelationshipBuilder:
         if rel_id in self._relationships:
             return self._relationships[rel_id]
 
+        props = dict(properties or {})
+        props["investigation_id"] = self.investigation_id
+        props["analysis_id"] = self.analysis_id
+
         rel = {
             "id": rel_id,
             "investigation_id": self.investigation_id,
+            "analysis_id": self.analysis_id,
             "source_id": source_id,
             "target_id": target_id,
             "source": source_id,
@@ -76,7 +81,7 @@ class RelationshipBuilder:
             "provenance": provenance_source,
             "source_reference": source_reference,
             "confidence": float(confidence),
-            "properties": properties or {},
+            "properties": props,
         }
         self._relationships[rel_id] = rel
         return rel

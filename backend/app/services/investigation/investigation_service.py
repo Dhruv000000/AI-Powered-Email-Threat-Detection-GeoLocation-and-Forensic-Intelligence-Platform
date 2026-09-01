@@ -81,6 +81,15 @@ class InvestigationService:
         investigation_id: str,
         created_by: str = "usr-analyst-001",
     ) -> InvestigationModel:
+        existing = self.get_by_analysis_id(analysis_id) or self.get_by_investigation_id(investigation_id)
+        if existing:
+            existing.status = "created"
+            existing.stage = "loading_analysis"
+            existing.progress = 5
+            existing.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            return existing
+
         record = InvestigationModel(
             investigation_id=investigation_id,
             analysis_id=analysis_id,
@@ -135,10 +144,11 @@ class InvestigationService:
         findings: List[Dict[str, Any]],
         summary_dict: Dict[str, Any],
     ) -> None:
-        # 1. Clear old refs if re-investigating
-        self.db.query(InvestigationFindingModel).filter(InvestigationFindingModel.investigation_id == investigation.investigation_id).delete()
-        self.db.query(InvestigationEntityRefModel).filter(InvestigationEntityRefModel.investigation_id == investigation.investigation_id).delete()
-        self.db.query(InvestigationRelationshipRefModel).filter(InvestigationRelationshipRefModel.investigation_id == investigation.investigation_id).delete()
+        # 1. Clear old child records if re-investigating
+        self.db.query(InvestigationFindingModel).filter(InvestigationFindingModel.investigation_id == investigation.investigation_id).delete(synchronize_session="fetch")
+        self.db.query(InvestigationEntityRefModel).filter(InvestigationEntityRefModel.investigation_id == investigation.investigation_id).delete(synchronize_session="fetch")
+        self.db.query(InvestigationRelationshipRefModel).filter(InvestigationRelationshipRefModel.investigation_id == investigation.investigation_id).delete(synchronize_session="fetch")
+        self.db.flush()
 
         # 2. Persist Entity Refs
         for e in entities:

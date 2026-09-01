@@ -6,7 +6,7 @@ from fastapi import (
     HTTPException,
     status,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import select
 
 from app.core.logging import logger
@@ -29,6 +29,9 @@ from app.schemas.investigation import (
 from app.api.deps import get_current_user, get_investigation_orchestrator
 from app.services.investigation.orchestrator import InvestigationOrchestrator
 from app.services.investigation.investigation_service import InvestigationService
+from app.services.investigation.entity_builder import EntityBuilder
+from app.services.investigation.relationship_builder import RelationshipBuilder
+from app.services.investigation.paths_engine import ThreatPathEngine
 from app.workers.investigation_worker import enqueue_investigation_job
 
 router = APIRouter(prefix="/investigations", tags=["Email Threat Investigation Engine"])
@@ -54,7 +57,15 @@ def create_investigation(
 ):
     analysis_id = payload.analysis_id
 
-    # 1. Validate analysis exists and is completed
+    # 1. Resolve analysis_id if an investigation_id was provided
+    if analysis_id.startswith("INV-"):
+        inv_record = db.execute(
+            select(InvestigationModel).where(InvestigationModel.investigation_id == analysis_id)
+        ).scalars().first()
+        if inv_record:
+            analysis_id = inv_record.analysis_id
+
+    # 2. Validate analysis exists and is completed
     analysis = db.execute(
         select(EmailAnalysisModel).where(EmailAnalysisModel.analysis_id == analysis_id)
     ).scalars().first()
@@ -62,7 +73,7 @@ def create_investigation(
     if not analysis:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "ANALYSIS_NOT_FOUND", "message": f"No forensic analysis record found with ID '{analysis_id}'."},
+            detail={"code": "ANALYSIS_NOT_FOUND", "message": f"No forensic analysis record found with ID '{payload.analysis_id}'."},
         )
 
     if analysis.status != "completed":
@@ -128,10 +139,12 @@ def create_investigation(
             detail={"code": "NEO4J_UNAVAILABLE", "message": "Graph database service is unreachable."},
         )
     except Exception as e:
-        logger.error(f"Investigation execution error: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Investigation execution error: {e}\n{tb}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "INVESTIGATION_FAILED", "message": "An unexpected error occurred during investigation execution."},
+            detail={"code": "INVESTIGATION_FAILED", "message": f"{str(e)}", "traceback": tb},
         )
 
 
@@ -292,6 +305,74 @@ def get_investigation_graph(
         action="graph_viewed",
     )
 
+    # 1. Self-healing & Deterministic Reconstruction from authoritative EmailAnalysis
+    analysis = db.execute(
+        select(EmailAnalysisModel)
+        .options(
+            joinedload(EmailAnalysisModel.metadata_record),
+            joinedload(EmailAnalysisModel.authentication),
+            selectinload(EmailAnalysisModel.urls),
+            selectinload(EmailAnalysisModel.ips),
+            selectinload(EmailAnalysisModel.attachments),
+            selectinload(EmailAnalysisModel.relay_hops),
+        )
+        .where(EmailAnalysisModel.analysis_id == record.analysis_id)
+    ).scalars().first()
+
+    if analysis:
+        entity_builder = EntityBuilder(analysis, record.investigation_id)
+        entities = entity_builder.build_all_entities()
+
+        rel_builder = RelationshipBuilder(analysis, record.investigation_id, entities)
+        relationships = rel_builder.build_all_relationships()
+
+        nodes = []
+        for ent in entities:
+            display_name = ent.get("display_label") or ent.get("label") or ent["id"]
+            nodes.append({
+                "group": "nodes",
+                "data": {
+                    "id": ent["id"],
+                    "label": display_name,
+                    "name": ent.get("name") or display_name,
+                    "type": ent.get("type", "Entity"),
+                    "severity": ent.get("severity"),
+                    "risk_score": ent.get("risk_score"),
+                    "is_origin": ent.get("is_origin", False),
+                    "is_suspicious": ent.get("is_suspicious", False),
+                    "evidence_reference": ent.get("evidence_reference"),
+                    "properties": ent.get("properties", {}),
+                },
+            })
+
+        edges = []
+        for rel in relationships:
+            src = rel.get("source_id") or rel.get("source")
+            tgt = rel.get("target_id") or rel.get("target")
+            lbl = rel.get("type") or rel.get("label", "RELATION")
+            edges.append({
+                "group": "edges",
+                "data": {
+                    "id": rel["id"],
+                    "source": src,
+                    "target": tgt,
+                    "label": lbl,
+                    "provenance": rel.get("provenance"),
+                    "source_reference": rel.get("source_reference"),
+                    "confidence": float(rel.get("confidence", 1.0)),
+                    "properties": rel.get("properties", {}),
+                },
+            })
+
+        return CytoscapeGraphResponse(
+            investigation_id=record.investigation_id,
+            node_count=len(nodes),
+            edge_count=len(edges),
+            nodes=nodes,
+            edges=edges,
+        )
+
+    # 2. Fallback to graph service
     graph_data = orchestrator.graph_service.get_investigation_graph(
         investigation_id=record.investigation_id,
         max_nodes=max_nodes,
@@ -470,6 +551,37 @@ def get_investigation_paths(
         user_id=current_user.id,
         action="path_viewed",
     )
+
+    # Deterministic reconstruction of threat paths from authoritative analysis
+    analysis = db.execute(
+        select(EmailAnalysisModel)
+        .options(
+            joinedload(EmailAnalysisModel.metadata_record),
+            joinedload(EmailAnalysisModel.authentication),
+            selectinload(EmailAnalysisModel.urls),
+            selectinload(EmailAnalysisModel.ips),
+            selectinload(EmailAnalysisModel.attachments),
+            selectinload(EmailAnalysisModel.relay_hops),
+        )
+        .where(EmailAnalysisModel.analysis_id == record.analysis_id)
+    ).scalars().first()
+
+    if analysis:
+        entity_builder = EntityBuilder(analysis, record.investigation_id)
+        entities = entity_builder.build_all_entities()
+
+        rel_builder = RelationshipBuilder(analysis, record.investigation_id, entities)
+        relationships = rel_builder.build_all_relationships()
+
+        paths_engine = ThreatPathEngine(analysis, record.investigation_id, entities, relationships)
+        computed_paths = paths_engine.compute_threat_paths()
+
+        path_dtos = [ThreatPathDTO.model_validate(p) for p in computed_paths]
+        return ThreatPathsResponse(
+            investigation_id=record.investigation_id,
+            total_paths=len(path_dtos),
+            paths=path_dtos,
+        )
 
     cached_paths = (record.summary_json or {}).get("key_threat_paths", [])
     if not cached_paths:

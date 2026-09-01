@@ -119,6 +119,30 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
       })),
     ];
 
+    const getLayoutConfig = (name: string) => {
+      if (name === 'cose') {
+        return {
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          padding: 50,
+          nodeRepulsion: () => 8000,
+          idealEdgeLength: () => 120,
+          edgeElasticity: () => 100,
+          gravity: 0.25,
+          numIter: 1000,
+          initialTemp: 200,
+          coolingFactor: 0.95,
+        };
+      }
+      return {
+        name,
+        animate: true,
+        animationDuration: 400,
+        padding: 40,
+      };
+    };
+
     if (!cyRef.current) {
       cyRef.current = cytoscape({
         container: containerRef.current,
@@ -130,16 +154,19 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
               'background-color': 'data(color)',
               label: 'data(label)',
               color: '#F3F4F6',
-              'font-size': '10px',
-              'font-family': 'monospace',
+              'font-size': '11px',
+              'font-family': 'JetBrains Mono, monospace',
               'text-valign': 'bottom',
-              'text-margin-y': 4,
+              'text-margin-y': 8,
+              'text-wrap': 'ellipsis',
+              'text-max-width': '120px',
               'text-background-color': '#0F172A',
-              'text-background-opacity': 0.85,
-              'text-background-padding': '2px',
+              'text-background-opacity': 0.9,
+              'text-background-padding': '3px',
               'text-background-shape': 'roundrectangle',
-              width: 32,
-              height: 32,
+              shape: 'ellipse',
+              width: 48,
+              height: 48,
               'border-width': 2,
               'border-color': '#1E293B',
               'transition-property': 'background-color, border-color, border-width, opacity',
@@ -150,10 +177,26 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
             selector: 'node[type = "Email"]',
             style: {
               shape: 'roundrectangle',
-              width: 38,
-              height: 38,
+              width: 56,
+              height: 56,
               'border-color': '#C084FC',
               'border-width': 3,
+            },
+          },
+          {
+            selector: 'node[type = "Domain"]',
+            style: {
+              shape: 'roundrectangle',
+              width: 48,
+              height: 48,
+            },
+          },
+          {
+            selector: 'node[type = "IP"], node[type = "IPAddress"]',
+            style: {
+              shape: 'roundrectangle',
+              width: 46,
+              height: 46,
             },
           },
           {
@@ -207,12 +250,7 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
             },
           },
         ],
-        layout: {
-          name: layoutName,
-          animate: true,
-          animationDuration: 400,
-          padding: 30,
-        },
+        layout: getLayoutConfig(layoutName) as any,
         minZoom: 0.2,
         maxZoom: 3.0,
       });
@@ -241,7 +279,7 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
       const cy = cyRef.current;
       cy.elements().remove();
       cy.add(elements);
-      cy.layout({ name: layoutName, animate: true, animationDuration: 400, padding: 30 } as any).run();
+      cy.layout(getLayoutConfig(layoutName) as any).run();
     }
   }, [data, selectedTypes, layoutName, searchTerm]);
 

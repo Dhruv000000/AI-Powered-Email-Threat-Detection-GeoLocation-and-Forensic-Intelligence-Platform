@@ -4,6 +4,7 @@ from app.db.models.email_analysis import (
     EmailMetadataModel,
     EmailUrlModel,
     EmailAttachmentModel,
+    EmailIpModel,
 )
 
 
@@ -90,8 +91,10 @@ def test_investigation_api_endpoints(client, db_session):
     res_graph = client.get(f"/api/v1/investigations/{inv_id}/graph")
     assert res_graph.status_code == 200
     graph = res_graph.json()
-    assert graph["node_count"] >= 3
-    assert graph["edge_count"] >= 2
+    assert graph["node_count"] >= 5
+    assert graph["edge_count"] >= 4
+    assert len(graph["nodes"]) >= 5
+    assert len(graph["edges"]) >= 4
     assert "nodes" in graph
     assert "edges" in graph
     for n in graph["nodes"]:
@@ -139,3 +142,108 @@ def test_investigation_api_error_handling(client, db_session):
     # Test 404 for nonexistent investigation
     res_inv_404 = client.get("/api/v1/investigations/INV-NONEXISTENT")
     assert res_inv_404.status_code == 404
+
+
+def test_get_graph_returns_all_extracted_entities_and_edges(client, db_session):
+    analysis_id = "ANL-RECON-001"
+    analysis = EmailAnalysisModel(
+        analysis_id=analysis_id,
+        filename="recon_test.eml",
+        sha256="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        status="completed",
+        threat_type="phishing",
+        risk_score=92,
+        severity="critical",
+    )
+    analysis.metadata_record = EmailMetadataModel(
+        analysis_id=analysis_id,
+        from_email="security@micr0soft.com",
+        from_header="security@micr0soft.com",
+        reply_to="attacker@evil.com",
+        subject="Urgent Security Alert",
+    )
+    analysis.urls = [
+        EmailUrlModel(
+            analysis_id=analysis_id,
+            original_url="http://1.2.3.4/login",
+            normalized_url="http://1.2.3.4/login",
+            domain="1.2.3.4",
+            is_ip_based=True,
+            risk_score=95,
+        )
+    ]
+    analysis.ips = [
+        EmailIpModel(
+            analysis_id=analysis_id,
+            ip="1.2.3.4",
+            ip_version=4,
+            is_private=False,
+            source="received_header",
+            is_probable_origin=True,
+        )
+    ]
+    db_session.add(analysis)
+    db_session.commit()
+
+    # Trigger investigation
+    res_post = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": analysis_id, "mode": "direct"},
+    )
+    assert res_post.status_code == 200
+    inv_id = res_post.json()["investigation_id"]
+
+    # Call GET /api/v1/investigations/{investigation_id}/graph
+    res_graph = client.get(f"/api/v1/investigations/{inv_id}/graph")
+    assert res_graph.status_code == 200
+    graph = res_graph.json()
+
+    # Assert len(nodes) >= 5 and len(edges) >= 4
+    nodes = graph["nodes"]
+    edges = graph["edges"]
+    assert len(nodes) >= 5, f"Expected at least 5 nodes, got {len(nodes)}: {nodes}"
+    assert len(edges) >= 4, f"Expected at least 4 edges, got {len(edges)}: {edges}"
+
+    # Verify expected node types exist
+    node_types = {n["data"]["type"] for n in nodes}
+    assert "Email" in node_types
+    assert "EmailAddress" in node_types
+    assert "URL" in node_types
+
+    # Verify expected edge labels exist
+    edge_labels = {e["data"]["label"] for e in edges}
+    assert "SENT" in edge_labels
+    assert "SPECIFIED_AS_REPLY_TO" in edge_labels
+    assert "CONTAINS_URL" in edge_labels
+
+
+def test_create_investigation_twice_is_idempotent(client, db_session):
+    analysis_id = "ANL-IDEMPOTENT-001"
+    _seed_api_analysis(db_session, analysis_id, status="completed")
+
+    # 1. First Trigger
+    res1 = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": analysis_id, "mode": "direct"},
+    )
+    assert res1.status_code == 200
+    data1 = res1.json()
+    inv_id1 = data1["investigation_id"]
+
+    # 2. Second Trigger (Default Idempotent Return)
+    res2 = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": analysis_id, "mode": "direct"},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["investigation_id"] == inv_id1
+
+    # 3. Third Trigger (Forced Reinvestigation)
+    res3 = client.post(
+        "/api/v1/investigations",
+        json={"analysis_id": analysis_id, "force_reinvestigation": True, "mode": "direct"},
+    )
+    assert res3.status_code == 200
+    data3 = res3.json()
+    assert data3["investigation_id"] == inv_id1

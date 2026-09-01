@@ -84,6 +84,12 @@ class ThreatPathEngine:
                         ip_node = self.entities_by_id.get(i_edge["target_id"])
                         ip_edge = i_edge
                         break
+            else:
+                for i_edge in self.relationships:
+                    if i_edge.get("source_id") == url_node["id"] and i_edge.get("type") in ("POINTS_TO_IP", "HOSTED_ON"):
+                        ip_node = self.entities_by_id.get(i_edge["target_id"])
+                        ip_edge = i_edge
+                        break
 
             steps = []
             node_ids = []

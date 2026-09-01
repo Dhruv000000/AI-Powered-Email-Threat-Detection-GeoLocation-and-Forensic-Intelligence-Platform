@@ -43,7 +43,7 @@ export const InvestigationPage: React.FC = () => {
   const [highlightedEdgeIds, setHighlightedEdgeIds] = useState<string[]>([]);
 
   const loadData = useCallback(async (force = false) => {
-    if (!investigationId) return;
+    let targetId = investigationId;
 
     try {
       if (force) {
@@ -53,19 +53,65 @@ export const InvestigationPage: React.FC = () => {
       }
       setError(null);
 
+      // If no investigationId in route params, fetch the latest one from the database
+      if (!targetId) {
+        const list = await investigationService.listInvestigations();
+        if (list.length > 0) {
+          targetId = list[0].investigation_id;
+        } else {
+          setError('No investigations found. Please analyze an email first.');
+          return;
+        }
+      }
+
       // 1. Trigger or Fetch Investigation
-      const invData = await investigationService.createInvestigation(
-        investigationId,
-        force,
-        'direct'
-      );
-      setInvestigation(invData);
+      let invData: InvestigationDetail;
+      if (targetId.startsWith('INV-')) {
+        invData = await investigationService.getInvestigation(targetId);
+      } else {
+        invData = await investigationService.createInvestigation(
+          targetId,
+          force,
+          'direct'
+        );
+      }
 
       // 2. Fetch Graph Data
       const gData = await investigationService.getInvestigationGraph(
         invData.investigation_id
       );
       setGraphData(gData);
+
+      // 3. Fallback check for findings and threat paths if empty in summary
+      if (!invData.summary?.top_findings || invData.summary.top_findings.length === 0) {
+        try {
+          const liveFindings = await investigationService.getInvestigationFindings(invData.investigation_id);
+          if (liveFindings && liveFindings.length > 0) {
+            invData.summary = {
+              ...invData.summary,
+              top_findings: liveFindings,
+            } as any;
+          }
+        } catch (e) {
+          console.warn('[InvestigationPage] Failed to fetch live findings:', e);
+        }
+      }
+
+      if (!invData.summary?.key_threat_paths || invData.summary.key_threat_paths.length === 0) {
+        try {
+          const livePaths = await investigationService.getThreatPaths(invData.investigation_id);
+          if (livePaths && livePaths.length > 0) {
+            invData.summary = {
+              ...invData.summary,
+              key_threat_paths: livePaths,
+            } as any;
+          }
+        } catch (e) {
+          console.warn('[InvestigationPage] Failed to fetch live threat paths:', e);
+        }
+      }
+
+      setInvestigation(invData);
     } catch (err: any) {
       console.error('Failed to load investigation:', err);
       setError(err.message || 'Unable to construct threat investigation graph.');

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 from typing import List, Optional, Dict, Any
 from sqlalchemy import (
     String,
@@ -17,10 +18,14 @@ def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def generate_uuid() -> str:
+    return str(uuid4())
+
+
 class Investigation(Base):
     __tablename__ = "investigations"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     investigation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     analysis_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("email_analyses.analysis_id", ondelete="CASCADE"), unique=True, index=True, nullable=False
@@ -84,7 +89,7 @@ InvestigationModel = Investigation
 class InvestigationFinding(Base):
     __tablename__ = "investigation_findings"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -115,7 +120,7 @@ InvestigationFindingModel = InvestigationFinding
 class InvestigationEntityRefModel(Base):
     __tablename__ = "investigation_entity_refs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -138,7 +143,7 @@ class InvestigationEntityRefModel(Base):
 class InvestigationRelationshipRefModel(Base):
     __tablename__ = "investigation_relationship_refs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -161,7 +166,7 @@ class InvestigationRelationshipRefModel(Base):
 class InvestigationAuditLogModel(Base):
     __tablename__ = "investigation_audit_log"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     investigation_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("investigations.investigation_id", ondelete="CASCADE"), index=True, nullable=False
     )

@@ -45,6 +45,14 @@ router = APIRouter(prefix="/email-analysis", tags=["Email Threat Analysis Engine
         "and persists results to PostgreSQL."
     ),
 )
+@router.post(
+    "/analyze-file",
+    response_model=EmailAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze Uploaded .EML Email File (Alias)",
+    description="Alias route for file upload analysis.",
+    include_in_schema=False,
+)
 async def analyze_email_file(
     file: UploadFile = File(..., description="Uploaded RFC 822 .eml email file"),
     force_reanalysis: bool = Form(default=False, description="Bypass idempotency cache"),

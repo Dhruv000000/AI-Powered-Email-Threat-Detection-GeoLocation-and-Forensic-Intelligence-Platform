@@ -180,21 +180,63 @@ class InMemoryGraphStore:
             else:
                 self._edges[rel_id] = dict(r)
 
+    def _matches_investigation(self, item: Dict[str, Any], investigation_id: str) -> bool:
+        if not investigation_id:
+            return True
+        inv_id = item.get("investigation_id")
+        anl_id = item.get("analysis_id")
+        props = item.get("properties") or {}
+        p_inv = props.get("investigation_id") if isinstance(props, dict) else None
+        p_anl = props.get("analysis_id") if isinstance(props, dict) else None
+
+        targets = {investigation_id}
+        if investigation_id.startswith("INV-"):
+            targets.add(investigation_id.replace("INV-", "ANL-"))
+            parts = investigation_id.split("-")
+            if len(parts) > 1:
+                targets.add(parts[1])
+        elif investigation_id.startswith("ANL-"):
+            targets.add(investigation_id.replace("ANL-", "INV-"))
+            parts = investigation_id.split("-")
+            if len(parts) > 1:
+                targets.add(parts[1])
+
+        for t in targets:
+            if not t:
+                continue
+            if inv_id == t or anl_id == t or p_inv == t or p_anl == t:
+                return True
+            if inv_id and t in str(inv_id):
+                return True
+            if anl_id and t in str(anl_id):
+                return True
+            if p_inv and t in str(p_inv):
+                return True
+            if p_anl and t in str(p_anl):
+                return True
+        return False
+
     def get_investigation_graph(
         self, investigation_id: str, max_nodes: int = 250, max_edges: int = 500
     ) -> Dict[str, Any]:
         scoped_nodes = [
             n for n in self._nodes.values()
-            if n.get("investigation_id") == investigation_id
+            if self._matches_investigation(n, investigation_id)
         ][:max_nodes]
 
         scoped_node_ids = {n["id"] for n in scoped_nodes}
 
         scoped_edges = [
             e for e in self._edges.values()
-            if e.get("investigation_id") == investigation_id
-            and e["source_id"] in scoped_node_ids
-            and e["target_id"] in scoped_node_ids
+            if (
+                self._matches_investigation(e, investigation_id)
+                or (
+                    (e.get("source_id") in scoped_node_ids or e.get("source") in scoped_node_ids)
+                    and (e.get("target_id") in scoped_node_ids or e.get("target") in scoped_node_ids)
+                )
+            )
+            and (e.get("source_id") in scoped_node_ids or e.get("source") in scoped_node_ids)
+            and (e.get("target_id") in scoped_node_ids or e.get("target") in scoped_node_ids)
         ][:max_edges]
 
         nodes_out = []
@@ -247,7 +289,9 @@ class InMemoryGraphStore:
 
     def get_entity(self, entity_id: str, investigation_id: str) -> Optional[Dict[str, Any]]:
         node = self._nodes.get(entity_id)
-        if not node or node.get("investigation_id") != investigation_id:
+        if not node:
+            return None
+        if investigation_id and not self._matches_investigation(node, investigation_id):
             return None
         return dict(node)
 
@@ -269,22 +313,24 @@ class InMemoryGraphStore:
 
             for edge_id in self._adjacency.get(curr_node, set()):
                 edge = self._edges.get(edge_id)
-                if not edge or edge.get("investigation_id") != investigation_id:
+                if not edge or (investigation_id and not self._matches_investigation(edge, investigation_id)):
                     continue
 
                 visited_edges.add(edge_id)
-                neighbor_id = edge["target_id"] if edge["source_id"] == curr_node else edge["source_id"]
+                src = edge.get("source_id") or edge.get("source")
+                tgt = edge.get("target_id") or edge.get("target")
+                neighbor_id = tgt if src == curr_node else src
                 if neighbor_id not in visited_nodes:
                     visited_nodes.add(neighbor_id)
                     queue.append((neighbor_id, depth + 1))
 
         nodes_out = [
             self._nodes[nid] for nid in visited_nodes
-            if nid in self._nodes and self._nodes[nid].get("investigation_id") == investigation_id
+            if nid in self._nodes and (not investigation_id or self._matches_investigation(self._nodes[nid], investigation_id))
         ]
         edges_out = [
             self._edges[eid] for eid in visited_edges
-            if eid in self._edges and self._edges[eid].get("investigation_id") == investigation_id
+            if eid in self._edges and (not investigation_id or self._matches_investigation(self._edges[eid], investigation_id))
         ]
 
         return {"nodes": nodes_out, "edges": edges_out}
@@ -317,10 +363,12 @@ class InMemoryGraphStore:
 
             for edge_id in self._adjacency.get(curr_node, set()):
                 edge = self._edges.get(edge_id)
-                if not edge or edge.get("investigation_id") != investigation_id:
+                if not edge or (investigation_id and not self._matches_investigation(edge, investigation_id)):
                     continue
 
-                next_node = edge["target_id"] if edge["source_id"] == curr_node else edge["source_id"]
+                src = edge.get("source_id") or edge.get("source")
+                tgt = edge.get("target_id") or edge.get("target")
+                next_node = tgt if src == curr_node else src
                 if next_node not in visited:
                     visited.add(next_node)
                     new_path = list(path)
@@ -335,64 +383,85 @@ class InMemoryGraphStore:
         paths = []
         email_nodes = [
             n for n in self._nodes.values()
-            if n.get("investigation_id") == investigation_id and n.get("type") == "Email"
+            if self._matches_investigation(n, investigation_id) and n.get("type") == "Email"
         ]
         if not email_nodes:
             return []
 
         email_id = email_nodes[0]["id"]
 
+        # 1. Look for URL & Domain Phishing Chains
         for edge_id in self._adjacency.get(email_id, set()):
             edge = self._edges.get(edge_id)
-            if not edge or edge.get("investigation_id") != investigation_id:
+            if not edge or not self._matches_investigation(edge, investigation_id):
                 continue
 
-            target_node = self._nodes.get(edge.get("target_id") or edge.get("target"))
+            target_id = edge.get("target_id") or edge.get("target")
+            target_node = self._nodes.get(target_id)
             if target_node and target_node.get("type") == "URL":
                 url_id = target_node["id"]
+                dom_node = None
+                dom_edge_id = None
+                ip_node = None
+                ip_edge_id = None
+
                 for u_edge_id in self._adjacency.get(url_id, set()):
                     u_edge = self._edges.get(u_edge_id)
-                    if not u_edge or u_edge.get("investigation_id") != investigation_id:
+                    if not u_edge or not self._matches_investigation(u_edge, investigation_id):
                         continue
-                    dom_node = self._nodes.get(u_edge.get("target_id") or u_edge.get("target"))
-                    if dom_node and dom_node.get("type") == "Domain":
-                        dom_id = dom_node["id"]
-                        ip_nodes = []
-                        for d_edge_id in self._adjacency.get(dom_id, set()):
-                            d_edge = self._edges.get(d_edge_id)
-                            if not d_edge or d_edge.get("investigation_id") != investigation_id:
-                                continue
-                            ip_node = self._nodes.get(d_edge.get("target_id") or d_edge.get("target"))
-                            if ip_node and ip_node.get("type") == "IP":
-                                ip_nodes.append(ip_node)
+                    u_target = u_edge.get("target_id") or u_edge.get("target")
+                    candidate_dom = self._nodes.get(u_target)
+                    if candidate_dom and candidate_dom.get("type") == "Domain":
+                        dom_node = candidate_dom
+                        dom_edge_id = u_edge_id
+                        break
+                    elif candidate_dom and candidate_dom.get("type") in ("IP", "IPAddress"):
+                        ip_node = candidate_dom
+                        ip_edge_id = u_edge_id
 
-                        path_steps = [
-                            f"Email: {email_nodes[0].get('display_label', 'Email')}",
-                            f"Extracted URL: {target_node.get('display_label', target_node['id'])}",
-                            f"Host Domain: {dom_node.get('display_label', dom_node['id'])}",
-                        ]
-                        node_ids = [email_id, url_id, dom_id]
-                        edge_ids = [edge_id, u_edge_id]
+                if dom_node:
+                    dom_id = dom_node["id"]
+                    for d_edge_id in self._adjacency.get(dom_id, set()):
+                        d_edge = self._edges.get(d_edge_id)
+                        if not d_edge or not self._matches_investigation(d_edge, investigation_id):
+                            continue
+                        d_target = d_edge.get("target_id") or d_edge.get("target")
+                        candidate_ip = self._nodes.get(d_target)
+                        if candidate_ip and candidate_ip.get("type") in ("IP", "IPAddress"):
+                            ip_node = candidate_ip
+                            ip_edge_id = d_edge_id
+                            break
 
-                        if ip_nodes:
-                            path_steps.append(f"Hosted IP: {ip_nodes[0].get('display_label', ip_nodes[0]['id'])}")
-                            node_ids.append(ip_nodes[0]["id"])
-                            for d_edge_id in self._adjacency.get(dom_id, set()):
-                                if (self._edges[d_edge_id].get("target_id") or self._edges[d_edge_id].get("target")) == ip_nodes[0]["id"]:
-                                    edge_ids.append(d_edge_id)
-                                    break
+                path_steps = [
+                    f"Email: {email_nodes[0].get('display_label', 'Email')}",
+                    f"Extracted URL: {target_node.get('display_label', target_node['id'])}",
+                ]
+                node_ids = [email_id, url_id]
+                edge_ids = [edge_id]
 
-                        paths.append({
-                            "path_id": f"path-url-{len(paths) + 1}",
-                            "path_type": "phishing_infrastructure_path",
-                            "title": "Phishing URL & Domain Infrastructure Path",
-                            "description": f"Email links to URL '{target_node.get('display_label')}' hosted under domain '{dom_node.get('display_label')}'.",
-                            "severity": target_node.get("severity", "high"),
-                            "confidence": 0.95,
-                            "steps": path_steps,
-                            "node_ids": node_ids,
-                            "edge_ids": edge_ids,
-                        })
+                if dom_node:
+                    path_steps.append(f"Host Domain: {dom_node.get('display_label', dom_node['id'])}")
+                    node_ids.append(dom_node["id"])
+                    if dom_edge_id:
+                        edge_ids.append(dom_edge_id)
+
+                if ip_node:
+                    path_steps.append(f"Hosted IP: {ip_node.get('display_label', ip_node['id'])}")
+                    node_ids.append(ip_node["id"])
+                    if ip_edge_id:
+                        edge_ids.append(ip_edge_id)
+
+                paths.append({
+                    "path_id": f"path-url-{len(paths) + 1}",
+                    "path_type": "phishing_infrastructure_path",
+                    "title": "Phishing URL & Domain Infrastructure Path",
+                    "description": f"Email links to URL '{target_node.get('display_label')}' hosted under external infrastructure.",
+                    "severity": target_node.get("severity", "high"),
+                    "confidence": 0.95,
+                    "steps": path_steps,
+                    "node_ids": node_ids,
+                    "edge_ids": edge_ids,
+                })
 
             elif target_node and target_node.get("type") == "Attachment":
                 att_id = target_node["id"]
@@ -400,7 +469,7 @@ class InMemoryGraphStore:
                 hash_edge_id = None
                 for a_edge_id in self._adjacency.get(att_id, set()):
                     a_edge = self._edges.get(a_edge_id)
-                    if not a_edge or a_edge.get("investigation_id") != investigation_id:
+                    if not a_edge or not self._matches_investigation(a_edge, investigation_id):
                         continue
                     h_node = self._nodes.get(a_edge.get("target_id") or a_edge.get("target"))
                     if h_node and h_node.get("type") == "FileHash":
@@ -441,7 +510,7 @@ class InMemoryGraphStore:
         matches = []
         target_ids = set(entity_ids)
         for node in self._nodes.values():
-            if node["id"] in target_ids and node.get("investigation_id") != current_investigation_id:
+            if node["id"] in target_ids and not self._matches_investigation(node, current_investigation_id):
                 matches.append({
                     "entity_id": node["id"],
                     "other_investigation_id": node.get("investigation_id"),

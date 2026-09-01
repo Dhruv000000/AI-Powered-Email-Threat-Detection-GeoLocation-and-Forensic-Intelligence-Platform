@@ -1,6 +1,6 @@
 import hashlib
 from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import select
 
 from app.core.logging import logger
@@ -54,24 +54,40 @@ class InvestigationOrchestrator:
     ) -> InvestigationDetailResponse:
         logger.info(f"Starting investigation pipeline for analysis {analysis_id} (force={force_reinvestigation})")
 
-        # 1. Stage: loading_analysis
+        # Support resolving investigation ID to analysis ID
+        target_analysis_id = analysis_id
+        if analysis_id.startswith("INV-"):
+            inv_rec = self.db.execute(
+                select(InvestigationModel).where(InvestigationModel.investigation_id == analysis_id)
+            ).scalars().first()
+            if inv_rec:
+                target_analysis_id = inv_rec.analysis_id
+
+        # 1. Stage: loading_analysis with eager child relationship loading
         analysis = self.db.execute(
-            select(EmailAnalysisModel).where(EmailAnalysisModel.analysis_id == analysis_id)
+            select(EmailAnalysisModel)
+            .options(
+                joinedload(EmailAnalysisModel.metadata_record),
+                joinedload(EmailAnalysisModel.authentication),
+                selectinload(EmailAnalysisModel.urls),
+                selectinload(EmailAnalysisModel.ips),
+                selectinload(EmailAnalysisModel.attachments),
+                selectinload(EmailAnalysisModel.relay_hops),
+            )
+            .where(EmailAnalysisModel.analysis_id == target_analysis_id)
         ).scalars().first()
 
         if not analysis:
-            raise ValueError(f"Task 01 forensic analysis record '{analysis_id}' was not found.")
+            raise ValueError(f"Task 01 forensic analysis record '{target_analysis_id}' was not found.")
 
         if analysis.status != "completed":
             raise ValueError(
-                f"Cannot investigate analysis '{analysis_id}' with status '{analysis.status}'. "
+                f"Cannot investigate analysis '{target_analysis_id}' with status '{analysis.status}'. "
                 f"Task 01 analysis must be in 'completed' state."
             )
 
-        investigation_id = self._generate_investigation_id(analysis_id)
-
         # 2. Idempotency Check
-        existing_inv = self.inv_service.get_by_analysis_id(analysis_id)
+        existing_inv = self.inv_service.get_by_analysis_id(target_analysis_id)
         if existing_inv and not force_reinvestigation:
             if existing_inv.status == "completed":
                 logger.info(f"Idempotent hit: returning existing completed investigation '{existing_inv.investigation_id}'.")
@@ -80,13 +96,16 @@ class InvestigationOrchestrator:
         # 3. Create or Reset Investigation Record
         if existing_inv:
             inv_record = existing_inv
+            investigation_id = inv_record.investigation_id
             self.inv_service.update_stage(inv_record, stage="loading_analysis", progress=10, status="processing")
         else:
+            generated_id = self._generate_investigation_id(target_analysis_id)
             inv_record = self.inv_service.create_investigation_record(
-                analysis_id=analysis_id,
-                investigation_id=investigation_id,
+                analysis_id=target_analysis_id,
+                investigation_id=generated_id,
                 created_by=created_by,
             )
+            investigation_id = inv_record.investigation_id
 
         try:
             # 4. Stage: building_entities
@@ -99,7 +118,17 @@ class InvestigationOrchestrator:
             self.inv_service.update_stage(inv_record, stage="building_relationships", progress=40)
             rel_builder = RelationshipBuilder(analysis, investigation_id, entities)
             relationships = rel_builder.build_all_relationships()
-            logger.info(f"Built {len(relationships)} typed relationships for investigation {investigation_id}.")
+            for e in entities:
+                e["investigation_id"] = investigation_id
+                e["analysis_id"] = target_analysis_id
+                e.setdefault("properties", {})["investigation_id"] = investigation_id
+                e.setdefault("properties", {})["analysis_id"] = target_analysis_id
+
+            for r in relationships:
+                r["investigation_id"] = investigation_id
+                r["analysis_id"] = target_analysis_id
+                r.setdefault("properties", {})["investigation_id"] = investigation_id
+                r.setdefault("properties", {})["analysis_id"] = target_analysis_id
 
             # 6. Stage: syncing_graph (Neo4j in production / InMemoryGraphStore in local/CI)
             self.inv_service.update_stage(inv_record, stage="syncing_graph", progress=55)

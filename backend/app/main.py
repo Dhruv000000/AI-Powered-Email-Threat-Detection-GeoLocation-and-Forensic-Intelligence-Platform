@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import engine, _verify_sqlite_schema
 from app.db.models import *  # Ensure all models are loaded
 from app.api.v1.router import api_v1_router
 
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     # Startup: Ensure database tables are created
     logger.info(f"Initializing AEGIS database schema (Engine: {settings.ANALYSIS_ENGINE_VERSION})...")
     Base.metadata.create_all(bind=engine)
+    _verify_sqlite_schema(engine)
     logger.info("Database schema initialized successfully.")
     yield
     # Shutdown
@@ -61,7 +62,14 @@ origins = [
     settings.FRONTEND_URL,
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
 
 app.add_middleware(

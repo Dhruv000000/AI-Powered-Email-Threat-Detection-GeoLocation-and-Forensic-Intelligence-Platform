@@ -199,8 +199,15 @@ class EntityBuilder:
         is_suspicious: bool = False,
     ) -> Dict[str, Any]:
         """Add or merge entity node with deterministic deduplication."""
+        props = dict(properties or {})
+        props["investigation_id"] = self.investigation_id
+        props["analysis_id"] = self.analysis_id
+
         if entity_id in self._entities:
             existing = self._entities[entity_id]
+            existing["investigation_id"] = self.investigation_id
+            existing["analysis_id"] = self.analysis_id
+            existing.setdefault("properties", {}).update(props)
             if risk_score is not None:
                 if existing.get("risk_score") is None or risk_score > existing.get("risk_score", 0):
                     existing["risk_score"] = risk_score
@@ -209,13 +216,12 @@ class EntityBuilder:
                 existing["is_origin"] = True
             if is_suspicious:
                 existing["is_suspicious"] = True
-            if properties:
-                existing.setdefault("properties", {}).update(properties)
             return existing
 
         entity = {
             "id": entity_id,
             "investigation_id": self.investigation_id,
+            "analysis_id": self.analysis_id,
             "type": entity_type,
             "label": display_label,
             "name": display_label,
@@ -226,7 +232,7 @@ class EntityBuilder:
             "evidence_reference": evidence_reference,
             "is_origin": is_origin,
             "is_suspicious": is_suspicious,
-            "properties": properties or {},
+            "properties": props,
         }
         self._entities[entity_id] = entity
         return entity
