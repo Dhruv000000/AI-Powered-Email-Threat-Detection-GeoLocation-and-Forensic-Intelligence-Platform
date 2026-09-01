@@ -21,6 +21,7 @@ from app.db.models.investigation import (
 )
 
 from app.db.models.remediation import RemediationExecutionLog
+from app.db.models.threat_intel import ThreatIntelCache
 
 __all__ = [
     "EmailAnalysisModel",
@@ -41,4 +42,5 @@ __all__ = [
     "InvestigationRelationshipRefModel",
     "InvestigationAuditLogModel",
     "RemediationExecutionLog",
+    "ThreatIntelCache",
 ]

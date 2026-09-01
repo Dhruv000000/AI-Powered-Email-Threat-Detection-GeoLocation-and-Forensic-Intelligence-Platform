@@ -63,6 +63,16 @@ from app.schemas.remediation import (
     RemediationHistoryResponse,
     STIXBundleDTO,
 )
+from app.schemas.threat_intel import (
+    ThreatIntelLookupRequest,
+    ThreatIntelProviderResultDTO,
+    ThreatIntelDTO,
+    ProcessTreeNodeDTO,
+    NetworkCallbackDTO,
+    RegistryModificationDTO,
+    SandboxReportDTO,
+    EnrichedInvestigationDTO,
+)
 
 __all__ = [
     "EmailMetadataSchema",
@@ -117,4 +127,12 @@ __all__ = [
     "RemediationExecutionResponse",
     "RemediationHistoryResponse",
     "STIXBundleDTO",
+    "ThreatIntelLookupRequest",
+    "ThreatIntelProviderResultDTO",
+    "ThreatIntelDTO",
+    "ProcessTreeNodeDTO",
+    "NetworkCallbackDTO",
+    "RegistryModificationDTO",
+    "SandboxReportDTO",
+    "EnrichedInvestigationDTO",
 ]

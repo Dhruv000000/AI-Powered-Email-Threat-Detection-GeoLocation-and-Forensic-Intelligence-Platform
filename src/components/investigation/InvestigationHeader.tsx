@@ -22,6 +22,7 @@ interface InvestigationHeaderProps {
   onOpenSearch: () => void;
   onOpenThreatMap?: () => void;
   onOpenReport?: () => void;
+  onOpenThreatIntel?: () => void;
   isRefreshing?: boolean;
 }
 
@@ -31,6 +32,7 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
   onOpenSearch,
   onOpenThreatMap,
   onOpenReport,
+  onOpenThreatIntel,
   isRefreshing = false,
 }) => {
   const navigate = useNavigate();
@@ -137,7 +139,18 @@ export const InvestigationHeader: React.FC<InvestigationHeaderProps> = ({
           )}
 
           {/* Action Toolbar */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpenThreatIntel && (
+              <button
+                onClick={onOpenThreatIntel}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-purple-950/80 hover:bg-purple-900 border border-purple-800 text-purple-200 text-xs font-mono font-bold transition shadow-sm"
+                title="View Live External Threat Intel & Malware Sandbox Detonation"
+              >
+                <Layers className="w-3.5 h-3.5 text-purple-400" />
+                <span>Threat Intel & Sandbox</span>
+              </button>
+            )}
+
             {onOpenThreatMap && (
               <button
                 onClick={onOpenThreatMap}

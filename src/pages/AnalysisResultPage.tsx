@@ -30,6 +30,7 @@ import { FeatureContributionBar } from '../components/analysis/FeatureContributi
 import { EvidenceLocker } from '../components/analysis/EvidenceLocker';
 import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
+import { ThreatIntelModal } from '../components/investigation/ThreatIntelModal';
 import { LoadingState } from '../components/common/LoadingState';
 
 export const AnalysisResultPage: React.FC = () => {
@@ -42,6 +43,7 @@ export const AnalysisResultPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'headers' | 'urls' | 'infrastructure' | 'ai' | 'evidence'>('overview');
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isThreatIntelModalOpen, setIsThreatIntelModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchEmail() {
@@ -153,7 +155,15 @@ export const AnalysisResultPage: React.FC = () => {
         </div>
 
         {/* Pivot actions */}
-        <div className="flex items-center gap-2 font-mono text-xs">
+        <div className="flex items-center gap-2 font-mono text-xs flex-wrap">
+          <button
+            onClick={() => setIsThreatIntelModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-950/80 hover:bg-purple-900 text-purple-200 border border-purple-800 rounded transition font-bold shadow-sm"
+            title="Open Live Threat Intelligence Feeds & Malware Sandbox Detonation"
+          >
+            <Server className="w-3.5 h-3.5 text-purple-400" />
+            <span>Threat Intel & Sandbox</span>
+          </button>
           <button
             onClick={() => setIsReportModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded transition font-bold shadow-md shadow-blue-900/30"
@@ -417,6 +427,13 @@ export const AnalysisResultPage: React.FC = () => {
         investigationId={email.id}
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
+      />
+
+      {/* Threat Intel & Sandbox Detonation Modal */}
+      <ThreatIntelModal
+        investigationId={email.id}
+        isOpen={isThreatIntelModalOpen}
+        onClose={() => setIsThreatIntelModalOpen(false)}
       />
     </div>
   );

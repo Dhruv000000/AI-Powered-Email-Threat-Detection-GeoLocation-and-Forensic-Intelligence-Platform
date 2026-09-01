@@ -44,10 +44,17 @@ from app.schemas.remediation import (
     RemediationHistoryResponse,
     STIXBundleDTO,
 )
+from app.schemas.threat_intel import (
+    ThreatIntelDTO,
+    SandboxReportDTO,
+    EnrichedInvestigationDTO,
+)
 from app.services.investigation.report_service import DFIRReportService
 from app.services.export.pdf_exporter import PDFReportExporter
 from app.services.export.stix_exporter import STIX21Exporter
 from app.services.integrations.remediation_runner import RemediationRunnerService
+from app.services.threat_intel.threat_intel_service import ThreatIntelAggregator
+from app.services.sandbox.attachment_sandbox import AttachmentSandboxEngine
 from app.workers.investigation_worker import enqueue_investigation_job
 
 router = APIRouter(prefix="/investigations", tags=["Email Threat Investigation Engine"])
@@ -865,3 +872,58 @@ def export_investigation_stix(
             "Content-Type": "application/json",
         },
     )
+
+
+# ============================================================================
+# External Threat Intelligence & Attachment Sandbox Endpoints
+# ============================================================================
+
+@router.post(
+    "/{investigation_id}/enrich",
+    response_model=EnrichedInvestigationDTO,
+    summary="Enrich Investigation with External Threat Intel",
+    description="Enriches all extracted URLs, IPs, domains, and hashes via VirusTotal, AbuseIPDB, and AlienVault OTX, and executes sandbox detonation on attachments.",
+)
+def enrich_investigation_indicators(
+    investigation_id: str,
+    force_refresh: bool = Query(False, description="Bypass 24h cache and force live queries"),
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    aggregator = ThreatIntelAggregator(db)
+    return aggregator.enrich_investigation(target_id=investigation_id, force_refresh=force_refresh)
+
+
+@router.get(
+    "/{investigation_id}/threat-intel",
+    response_model=List[ThreatIntelDTO],
+    summary="Get Enriched Threat Intelligence for Investigation",
+    description="Retrieves multi-provider reputation feeds for all indicators in this investigation. Auto-enriches on first load.",
+)
+def get_investigation_threat_intel(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    aggregator = ThreatIntelAggregator(db)
+    enriched = aggregator.enrich_investigation(target_id=investigation_id, force_refresh=False)
+    return enriched.indicators
+
+
+@router.get(
+    "/{investigation_id}/attachments",
+    response_model=List[SandboxReportDTO],
+    summary="Get Attachment Malware Sandbox Detonation Analysis",
+    description="Retrieves static PE/macro/PDF structure inspection and simulated process execution tree for attachments.",
+)
+def get_investigation_attachments(
+    investigation_id: str,
+    current_user: UserProfileSchema = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    sandbox_engine = AttachmentSandboxEngine(db)
+    inv_service = InvestigationService(db)
+    record = inv_service.get_by_investigation_id(investigation_id) or inv_service.get_by_analysis_id(investigation_id)
+    target_analysis_id = record.analysis_id if record else investigation_id
+    return sandbox_engine.analyze_investigation_attachments(target_analysis_id)
+

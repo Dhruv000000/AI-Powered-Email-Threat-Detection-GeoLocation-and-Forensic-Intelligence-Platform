@@ -20,6 +20,7 @@ import { InvestigationTimeline } from '../components/investigation/Investigation
 import { EntitySearchModal } from '../components/investigation/EntitySearchModal';
 import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
+import { ThreatIntelModal } from '../components/investigation/ThreatIntelModal';
 import { LoadingState } from '../components/common/LoadingState';
 import { AlertTriangle, RefreshCw, GitFork } from 'lucide-react';
 
@@ -41,6 +42,7 @@ export const InvestigationPage: React.FC = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isThreatMapOpen, setIsThreatMapOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isThreatIntelOpen, setIsThreatIntelOpen] = useState(false);
 
   // Highlighted IDs on the Cytoscape graph
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
@@ -243,6 +245,7 @@ export const InvestigationPage: React.FC = () => {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenThreatMap={() => setIsThreatMapOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}
+        onOpenThreatIntel={() => setIsThreatIntelOpen(true)}
         isRefreshing={refreshing}
       />
 
@@ -325,6 +328,13 @@ export const InvestigationPage: React.FC = () => {
         investigationId={investigation.investigation_id}
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
+      />
+
+      {/* Threat Intel & Sandbox Detonation Modal */}
+      <ThreatIntelModal
+        investigationId={investigation.investigation_id}
+        isOpen={isThreatIntelOpen}
+        onClose={() => setIsThreatIntelOpen(false)}
       />
     </div>
   );
