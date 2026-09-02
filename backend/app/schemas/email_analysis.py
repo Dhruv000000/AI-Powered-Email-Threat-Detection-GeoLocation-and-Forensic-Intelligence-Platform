@@ -147,6 +147,7 @@ class ClassificationResultSchema(BaseModel):
     ai_confidence: Optional[float] = None # 0.0 - 1.0 (calibrated model confidence)
     attachment_assessment: Optional[str] = "clean"
     score_components: Dict[str, Any] = Field(default_factory=dict)
+    ai_summary: Optional[str] = None
 
 
 class EvidenceMetadataSchema(BaseModel):
@@ -211,6 +212,7 @@ class EmailAnalysisResponse(BaseModel):
     model: ModelInfoSchema = Field(default_factory=ModelInfoSchema)
     evidence: EvidenceMetadataSchema
     timings: Optional[TimingMetricsSchema] = None
+    ai_summary: Optional[str] = None
 
 
 # Raw Ingest Request DTO

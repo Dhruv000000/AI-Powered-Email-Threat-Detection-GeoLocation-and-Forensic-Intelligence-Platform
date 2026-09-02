@@ -19,6 +19,40 @@ interface ThreatGraphComponentProps {
   className?: string;
 }
 
+export type GraphCategory = 'All' | 'Email Addresses' | 'Domains' | 'URLs' | 'IPs' | 'Files' | 'Relays';
+
+const categories: { label: GraphCategory; color: string }[] = [
+  { label: 'All', color: '#94A3B8' },
+  { label: 'Email Addresses', color: '#3B82F6' },
+  { label: 'Domains', color: '#10B981' },
+  { label: 'URLs', color: '#F59E0B' },
+  { label: 'IPs', color: '#EF4444' },
+  { label: 'Files', color: '#EC4899' },
+  { label: 'Relays', color: '#06B6D4' },
+];
+
+const isNodeMatchingCategory = (node: GraphNode, category: GraphCategory): boolean => {
+  if (category === 'All') return true;
+  const t = (node.type || '').toLowerCase();
+  const label = (node.label || '').toLowerCase();
+  switch (category) {
+    case 'Email Addresses':
+      return t === 'email' || t === 'case' || t === 'campaign' || label.includes('@');
+    case 'Domains':
+      return t === 'domain';
+    case 'URLs':
+      return t === 'url';
+    case 'IPs':
+      return t === 'ip';
+    case 'Files':
+      return t === 'file' || t === 'attachment';
+    case 'Relays':
+      return t === 'relay' || t === 'server';
+    default:
+      return false;
+  }
+};
+
 export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
   data,
   onSelectNode,
@@ -31,14 +65,7 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [layoutName, setLayoutName] = useState<'cose' | 'concentric' | 'circle' | 'breadthfirst' | 'grid'>('cose');
-  const [selectedTypes, setSelectedTypes] = useState<NodeType[]>([
-    'case',
-    'campaign',
-    'email',
-    'domain',
-    'url',
-    'ip',
-  ]);
+  const [activeCategory, setActiveCategory] = useState<GraphCategory>('All');
 
   // Color mapping by entity type
   const getTypeColor = (type: NodeType) => {
@@ -60,19 +87,12 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
     }
   };
 
-  const toggleTypeFilter = (type: NodeType) => {
-    setSelectedTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    );
-  };
-
   // Initialize Cytoscape
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Filter nodes and edges
+    // Preserve all nodes to maintain force-directed graph topology; filter only by search term if active
     const visibleNodes = data.nodes.filter((n) => {
-      if (!selectedTypes.includes(n.type)) return false;
       if (searchTerm.trim() && !n.label.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       return true;
     });
@@ -227,6 +247,30 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
             width: 2.5,
           },
         },
+        {
+          selector: '.filter-match',
+          style: {
+            opacity: 1.0,
+            'border-width': 4,
+            'border-color': '#38BDF8',
+            'border-opacity': 1,
+            events: 'yes',
+          },
+        },
+        {
+          selector: '.filter-context',
+          style: {
+            opacity: 0.65,
+            events: 'yes',
+          },
+        },
+        {
+          selector: '.filter-dimmed',
+          style: {
+            opacity: 0.15,
+            events: 'no',
+          },
+        },
       ],
       layout: {
         name: layoutName,
@@ -258,13 +302,44 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
         cyRef.current = null;
       }
     };
-  }, [data, selectedTypes, searchTerm, layoutName, onSelectNode]);
+  }, [data, searchTerm, layoutName, onSelectNode]);
+
+  // Category filter isolation effect: matching (1.0), 1-hop connected (0.65), unrelated (0.15)
+  useEffect(() => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+    cy.elements().removeClass('filter-match filter-context filter-dimmed');
+
+    if (activeCategory === 'All') {
+      return;
+    }
+
+    const matchingNodes = cy.nodes().filter((node) => {
+      const raw = node.data('rawNode') as GraphNode;
+      return raw ? isNodeMatchingCategory(raw, activeCategory) : false;
+    });
+
+    if (matchingNodes.length === 0) return;
+
+    const neighborhood = matchingNodes.neighborhood();
+    const contextElements = neighborhood.difference(matchingNodes);
+    const dimmedElements = cy.elements().difference(matchingNodes).difference(neighborhood);
+
+    matchingNodes.addClass('filter-match');
+    contextElements.addClass('filter-context');
+    dimmedElements.addClass('filter-dimmed');
+  }, [activeCategory, data, searchTerm]);
 
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
   const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
   const handleFit = () => cyRef.current?.fit(undefined, 40);
   const handleResetLayout = () => {
-    cyRef.current?.layout({ name: layoutName, animate: true } as cytoscape.LayoutOptions).run();
+    setActiveCategory('All');
+    if (cyRef.current) {
+      cyRef.current.elements().removeClass('filter-match filter-context filter-dimmed');
+      cyRef.current.layout({ name: layoutName, animate: true } as cytoscape.LayoutOptions).run();
+      cyRef.current.fit(undefined, 40);
+    }
   };
 
   return (
@@ -300,24 +375,22 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
             </select>
           </div>
 
-          {/* Entity Type Toggles */}
-          <div className="hidden lg:flex items-center gap-1">
-            {(['case', 'campaign', 'email', 'domain', 'url', 'ip'] as NodeType[]).map((type) => {
-              const active = selectedTypes.includes(type);
-              const color = getTypeColor(type);
+          {/* Entity Category Filter Chips */}
+          <div className="flex flex-wrap items-center gap-1">
+            {categories.map(({ label, color }) => {
+              const active = activeCategory === label;
               return (
                 <button
-                  key={type}
-                  onClick={() => toggleTypeFilter(type)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition border ${
+                  key={label}
+                  onClick={() => setActiveCategory(label)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 border ${
                     active
-                      ? 'bg-[#151E2E] text-gray-100'
-                      : 'bg-transparent text-gray-500 border-transparent line-through'
+                      ? 'bg-[#1E293B] text-sky-300 border-sky-400 shadow-sm shadow-sky-500/25 ring-1 ring-sky-500/50'
+                      : 'bg-[#151E2E] text-gray-400 border-[#263244] hover:text-gray-200 hover:border-gray-500'
                   }`}
-                  style={{ borderColor: active ? color : 'transparent' }}
                 >
-                  <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: color }} />
-                  {type}
+                  <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                  <span>{label}</span>
                 </button>
               );
             })}

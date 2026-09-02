@@ -312,21 +312,9 @@ class SummaryEngine:
         if high_risk_links == 0 and any(f.get("finding_code") in ("SUSPICIOUS_URL", "PHISHING_LINK", "MALICIOUS_DOMAIN", "CREDENTIAL_HARVESTING_URL", "ZERO_DAY_DOMAIN") for f in self.findings):
             high_risk_links = sum(1 for f in self.findings if f.get("finding_code") in ("SUSPICIOUS_URL", "PHISHING_LINK", "MALICIOUS_DOMAIN", "CREDENTIAL_HARVESTING_URL", "ZERO_DAY_DOMAIN")) or 1
 
-        # Executive summary narrative synthesized from evidence and telemetry
-        executive_summary = generate_investigation_summary(
-            threat_type=self.threat_type,
-            risk_score=self.risk_score,
-            severity=self.severity,
-            entity_count=len(self.entities),
-            threat_path_count=len(self.threat_paths),
-            finding_count=len(self.findings),
-            origin_geo=origin_geo,
-            relay_anomalies=relay_anomalies,
-            target_domains=target_domains,
-            sender_identity=sender_identity,
-            sender_domain=sender_domain,
-            target_url_host=target_url_host,
-        )
+        # Executive summary narrative synthesized from canonical SOC summary generator
+        from app.services.ai.summary_generator import generate_canonical_soc_summary
+        executive_summary = generate_canonical_soc_summary(self.analysis)
 
         return {
             "investigation_id": self.investigation_id,

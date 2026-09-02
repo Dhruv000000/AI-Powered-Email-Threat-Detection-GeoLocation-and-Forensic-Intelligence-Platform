@@ -551,6 +551,9 @@ class AnalysisOrchestrator:
             body_text_preview=meta.body_plain[:400] if meta and meta.body_plain else None,
         )
 
+        from app.services.ai.summary_generator import generate_canonical_soc_summary
+        soc_summary = generate_canonical_soc_summary(record)
+
         classification = ClassificationResultSchema(
             threat_type=record.threat_type or "unknown",
             risk_score=record.risk_score or 0,
@@ -558,6 +561,7 @@ class AnalysisOrchestrator:
             ai_confidence=record.ai_confidence,
             attachment_assessment=record.attachment_assessment or "clean",
             score_components=record.score_components or {},
+            ai_summary=soc_summary,
         )
 
         authentication = AuthenticationResultsSchema(
@@ -705,6 +709,7 @@ class AnalysisOrchestrator:
                 completed_at=record.completed_at,
                 processing_duration_ms=record.processing_duration_ms,
             ),
+            ai_summary=soc_summary,
         )
 
     def _cleanup_analysis_children(self, analysis_id: str):

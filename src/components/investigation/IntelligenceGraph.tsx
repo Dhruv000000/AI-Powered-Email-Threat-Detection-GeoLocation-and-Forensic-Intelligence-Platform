@@ -8,7 +8,7 @@ import {
   Search,
   Filter,
 } from 'lucide-react';
-import { CytoscapeGraphData, CytoscapeNode, CytoscapeEdge, EntityType } from '../../types/investigation';
+import { CytoscapeGraphData, CytoscapeNode, CytoscapeEdge } from '../../types/investigation';
 
 interface IntelligenceGraphProps {
   data: CytoscapeGraphData;
@@ -18,6 +18,39 @@ interface IntelligenceGraphProps {
   onSelectEdge: (edge: CytoscapeEdge['data'] | null) => void;
   className?: string;
 }
+
+export type GraphCategory = 'All' | 'Email Addresses' | 'Domains' | 'URLs' | 'IPs' | 'Files' | 'Relays';
+
+const categories: { label: GraphCategory; color: string }[] = [
+  { label: 'All', color: '#94A3B8' },
+  { label: 'Email Addresses', color: '#3B82F6' },
+  { label: 'Domains', color: '#10B981' },
+  { label: 'URLs', color: '#F59E0B' },
+  { label: 'IPs', color: '#EF4444' },
+  { label: 'Files', color: '#EC4899' },
+  { label: 'Relays', color: '#06B6D4' },
+];
+
+const isNodeMatchingCategory = (type: string, category: GraphCategory): boolean => {
+  if (category === 'All') return true;
+  const t = (type || '').toLowerCase();
+  switch (category) {
+    case 'Email Addresses':
+      return t === 'email' || t === 'emailaddress' || t === 'person';
+    case 'Domains':
+      return t === 'domain';
+    case 'URLs':
+      return t === 'url';
+    case 'IPs':
+      return t === 'ip' || t === 'ipaddress';
+    case 'Files':
+      return t === 'attachment' || t === 'filehash' || t === 'file';
+    case 'Relays':
+      return t === 'mailserver' || t === 'relay' || t === 'server';
+    default:
+      return false;
+  }
+};
 
 export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
   data,
@@ -31,17 +64,7 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
   const cyRef = useRef<Core | null>(null);
 
   const [layoutName, setLayoutName] = useState<'cose' | 'concentric' | 'circle' | 'breadthfirst'>('cose');
-  const [selectedTypes, setSelectedTypes] = useState<EntityType[]>([
-    'Email',
-    'EmailAddress',
-    'Domain',
-    'URL',
-    'IP',
-    'Attachment',
-    'FileHash',
-    'MailServer',
-    'Person',
-  ]);
+  const [activeCategory, setActiveCategory] = useState<GraphCategory>('All');
   const [searchTerm, setSearchTerm] = useState('');
 
   const getTypeColor = (type: string) => {
@@ -69,19 +92,12 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
     }
   };
 
-  const toggleTypeFilter = (type: EntityType) => {
-    setSelectedTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    );
-  };
-
   // Initialize and update Cytoscape
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Filter nodes by enabled types and search
+    // Preserve all nodes to maintain force-directed graph topology; filter only by search term if active
     const visibleNodes = data.nodes.filter((n) => {
-      if (!selectedTypes.includes(n.data.type as EntityType)) return false;
       if (searchTerm.trim() && !n.data.label.toLowerCase().includes(searchTerm.toLowerCase())) {
         return false;
       }
@@ -268,6 +284,30 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
               opacity: 0.2,
             },
           },
+          {
+            selector: '.filter-match',
+            style: {
+              opacity: 1.0,
+              'border-width': 4,
+              'border-color': '#38BDF8',
+              'border-opacity': 1,
+              events: 'yes',
+            },
+          },
+          {
+            selector: '.filter-context',
+            style: {
+              opacity: 0.65,
+              events: 'yes',
+            },
+          },
+          {
+            selector: '.filter-dimmed',
+            style: {
+              opacity: 0.15,
+              events: 'no',
+            },
+          },
         ],
         layout: getLayoutConfig(layoutName) as any,
         minZoom: 0.2,
@@ -300,7 +340,7 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
       cy.add(elements);
       cy.layout(getLayoutConfig(layoutName) as any).run();
     }
-  }, [data, selectedTypes, layoutName, searchTerm, onSelectNode, onSelectEdge]);
+  }, [data, layoutName, searchTerm, onSelectNode, onSelectEdge]);
 
   // Apply finding / path highlights dynamically
   useEffect(() => {
@@ -323,6 +363,32 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
     }
   }, [highlightedNodeIds, highlightedEdgeIds]);
 
+  // Category filter isolation effect: matching (1.0), 1-hop connected (0.65), unrelated (0.15)
+  useEffect(() => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+    cy.elements().removeClass('filter-match filter-context filter-dimmed');
+
+    if (activeCategory === 'All') {
+      return;
+    }
+
+    const matchingNodes = cy.nodes().filter((node) => {
+      const type = node.data('type') || '';
+      return isNodeMatchingCategory(type, activeCategory);
+    });
+
+    if (matchingNodes.length === 0) return;
+
+    const neighborhood = matchingNodes.neighborhood();
+    const contextElements = neighborhood.difference(matchingNodes);
+    const dimmedElements = cy.elements().difference(matchingNodes).difference(neighborhood);
+
+    matchingNodes.addClass('filter-match');
+    contextElements.addClass('filter-context');
+    dimmedElements.addClass('filter-dimmed');
+  }, [activeCategory, data, searchTerm]);
+
   const handleFit = () => {
     cyRef.current?.fit(undefined, 30);
   };
@@ -339,43 +405,33 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
 
   const handleReset = () => {
     if (!cyRef.current) return;
-    cyRef.current.elements().removeClass('highlighted dimmed');
+    setActiveCategory('All');
+    cyRef.current.elements().removeClass('highlighted dimmed filter-match filter-context filter-dimmed');
     cyRef.current.reset();
     cyRef.current.fit(undefined, 30);
     onSelectNode(null);
     onSelectEdge(null);
   };
 
-  const allEntityTypes: { type: EntityType; label: string }[] = [
-    { type: 'Email', label: 'Email' },
-    { type: 'EmailAddress', label: 'Addresses' },
-    { type: 'Domain', label: 'Domains' },
-    { type: 'URL', label: 'URLs' },
-    { type: 'IP', label: 'IPs' },
-    { type: 'Attachment', label: 'Files' },
-    { type: 'MailServer', label: 'Relays' },
-  ];
-
   return (
     <div className={`bg-[#0D1117] border border-[#263244] rounded-lg flex flex-col overflow-hidden relative ${className}`}>
       {/* Top Toolbar */}
       <div className="bg-[#111827] border-b border-[#263244] px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-        {/* Entity Type Toggle Chips */}
+        {/* Entity Category Filter Chips */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-2xs uppercase text-gray-400 font-semibold mr-1 flex items-center gap-1">
             <Filter className="w-3 h-3" /> Filters:
           </span>
-          {allEntityTypes.map(({ type, label }) => {
-            const isSelected = selectedTypes.includes(type);
-            const color = getTypeColor(type);
+          {categories.map(({ label, color }) => {
+            const isActive = activeCategory === label;
             return (
               <button
-                key={type}
-                onClick={() => toggleTypeFilter(type)}
-                className={`px-2 py-0.5 rounded text-2xs transition flex items-center gap-1.5 border ${
-                  isSelected
-                    ? 'bg-[#151E2E] text-gray-200 border-[#263244]'
-                    : 'bg-transparent text-gray-400 border-transparent opacity-40 hover:opacity-75'
+                key={label}
+                onClick={() => setActiveCategory(label)}
+                className={`px-2.5 py-1 rounded text-2xs font-mono font-semibold transition flex items-center gap-1.5 border ${
+                  isActive
+                    ? 'bg-[#1E293B] text-sky-300 border-sky-400 shadow-sm shadow-sky-500/25 ring-1 ring-sky-500/50'
+                    : 'bg-[#151E2E] text-gray-400 border-[#263244] hover:text-gray-200 hover:border-gray-500'
                 }`}
               >
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />

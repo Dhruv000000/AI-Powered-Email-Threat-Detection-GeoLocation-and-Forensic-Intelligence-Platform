@@ -282,7 +282,7 @@ class EmailService {
             : cls.threat_type === 'suspicious'
             ? 'Suspicious Telemetry Anomalies Detected'
             : 'Clean / Verified Baseline Telemetry',
-        humanExplanation: (() => {
+        humanExplanation: dto.ai_summary || dto.classification?.ai_summary || (() => {
           if ((cls.risk_score || 0) < 30 && flaggedReasons.length === 0) {
             return 'Forensic evaluation concluded with no deceptive signals, authentication anomalies, or malicious artifacts detected.';
           }
@@ -290,18 +290,29 @@ class EmailService {
           const senderDomain = meta.from_domain || (meta.from_email?.includes('@') ? meta.from_email.split('@')[1] : 'unverified-sender.com');
           const senderDomStr = senderDomain ? ` (${senderDomain})` : '';
 
-          const hops = dto.relay_hops || [];
+          const hops = dto.relay_path || dto.relay_hops || [];
           const originHop = hops[0];
-          const originIp = originHop?.ip || meta.from_ip || 'an external IP';
-          const originGeo = originHop?.location?.country_name || originHop?.location?.country || 'an external jurisdiction';
-          const hasTor = hops.some((h: any) => h.location?.is_tor || /tor|proxy/i.test(h.location?.as_org || ''));
+          const originIp = originHop?.ip || meta.from_ip || dto.probable_origin?.ip || 'an external IP';
+          const originGeo = originHop?.location?.country_name || originHop?.location?.country || dto.probable_origin?.location?.country_name || 'an external jurisdiction';
+          const hasTor = hops.some((h: any) => h.location?.is_tor || h.is_tor || /tor|proxy/i.test(h.location?.as_org || ''));
 
-          const urls = dto.extracted_urls || [];
-          const targetUrlObj =
-            urls.find((u: any) => u.domain && u.domain.toLowerCase() !== senderDomain.toLowerCase() && (u.is_lookalike || (u.risk_score || 0) >= 40 || u.threat_level === 'high' || u.threat_level === 'critical')) ||
-            urls.find((u: any) => u.domain && u.domain.toLowerCase() !== senderDomain.toLowerCase()) ||
-            urls[0];
-          const targetUrlHost = targetUrlObj?.domain || 'portal-verification-service-auth.com';
+          const urls = dto.indicators?.urls || dto.extracted_urls || [];
+          const highRiskUrls = urls.filter((u: any) =>
+            (u.domain && u.domain.toLowerCase() !== senderDomain.toLowerCase()) &&
+            (u.is_lookalike || (u.risk_score || 0) >= 40 || u.threat_level === 'high' || u.threat_level === 'critical')
+          );
+          const candidateUrl = highRiskUrls[0] || urls.find((u: any) => u.domain && u.domain.toLowerCase() !== senderDomain.toLowerCase()) || urls[0];
+
+          let targetUrlHost = 'external infrastructure';
+          if (candidateUrl) {
+            const raw = candidateUrl.domain || candidateUrl.url || candidateUrl.original_url || '';
+            try {
+              const parsed = new URL(raw.includes('://') ? raw : `http://${raw}`);
+              targetUrlHost = parsed.hostname || parsed.pathname.split('/')[0] || 'external infrastructure';
+            } catch {
+              targetUrlHost = candidateUrl.domain || raw || 'external infrastructure';
+            }
+          }
 
           const replyTo = meta.reply_to || '';
           const sender = meta.from_email || meta.from_address || '';

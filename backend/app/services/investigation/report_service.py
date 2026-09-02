@@ -556,12 +556,8 @@ class DFIRReportService:
         anom_count = len(threat_map.get("anomalies", [])) if threat_map else 0
         hop_count = len(threat_map.get("hops", [])) if threat_map else 0
 
-        narrative = (
-            f"The AEGIS Cyber Forensics Platform analyzed an inbound message originating from {from_str} with Subject {subject_str}. "
-            f"Forensic correlation identified {len(findings)} evidentiary findings across {len(threat_paths)} threat infrastructure paths, "
-            f"resulting in a composite Risk Score of {score}/100 ({sev}). "
-            f"Transmission telemetry revealed {hop_count} sequential transit relay hops traversing multiple jurisdictions with {anom_count} detected routing anomalies."
-        )
+        from app.services.ai.summary_generator import generate_canonical_soc_summary
+        narrative = generate_canonical_soc_summary(analysis)
 
         key_takeaways = [
             f"Threat Classification: {threat_type} ({verdict}) with {confidence * 100:.1f}% confidence.",
