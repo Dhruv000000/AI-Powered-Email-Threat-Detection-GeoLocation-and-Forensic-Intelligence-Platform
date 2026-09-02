@@ -1,6 +1,6 @@
 import React from 'react';
 import { FeatureContribution } from '../../types/email';
-import { Brain, Sparkles, MessageSquare, AlertCircle } from 'lucide-react';
+import { Brain, Sparkles, MessageSquare } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface FeatureContributionProps {

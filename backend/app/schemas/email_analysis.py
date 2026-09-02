@@ -1,6 +1,7 @@
+import re
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 class EmailMetadataSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -218,3 +219,11 @@ class RawEmailAnalysisRequest(BaseModel):
     filename: Optional[str] = Field(default="raw_pasted_email.eml", description="Optional reference filename")
     force_reanalysis: bool = Field(default=False, description="Bypass idempotency hash cache")
     mode: str = Field(default="direct", description="direct (sync) or queued (async via Redis)")
+
+    @field_validator("raw_content", mode="before")
+    @classmethod
+    def clean_surrogates_in_raw_content(cls, v: Any) -> str:
+        if isinstance(v, str):
+            # Strip any surrogate characters (0xD800 - 0xDFFF)
+            return re.sub(r"[\ud800-\udfff]", "", v)
+        return str(v) if v is not None else ""

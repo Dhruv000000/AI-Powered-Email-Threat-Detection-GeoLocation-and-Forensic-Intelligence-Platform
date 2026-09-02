@@ -5,7 +5,6 @@ import {
   Server,
   ShieldCheck,
   GitFork,
-  CheckCircle2,
   Lock,
 } from 'lucide-react';
 import { TimelineEvent } from '../../types/investigation';

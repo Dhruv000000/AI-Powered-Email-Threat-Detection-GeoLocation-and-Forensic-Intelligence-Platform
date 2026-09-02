@@ -292,6 +292,9 @@ class InvestigationService:
                 key_threat_paths=record.summary_json.get("key_threat_paths", []),
                 timeline=record.summary_json.get("timeline", []),
                 executive_summary=record.summary_json.get("executive_summary"),
+                attachments_count=record.summary_json.get("attachments_count", 0),
+                malicious_attachments_count=record.summary_json.get("malicious_attachments_count", 0),
+                high_risk_links=record.summary_json.get("high_risk_links", 0),
             )
 
         return InvestigationDetailResponse(

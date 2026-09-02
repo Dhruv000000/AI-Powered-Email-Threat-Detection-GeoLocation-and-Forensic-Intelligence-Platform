@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExtractedUrl } from '../../types/email';
-import { ExternalLink, AlertTriangle, ShieldCheck, Link2, CornerDownRight } from 'lucide-react';
+import { ShieldCheck, Link2, CornerDownRight } from 'lucide-react';
 import { SeverityBadge } from '../common/SeverityBadge';
 import { cn } from '../../lib/utils';
 

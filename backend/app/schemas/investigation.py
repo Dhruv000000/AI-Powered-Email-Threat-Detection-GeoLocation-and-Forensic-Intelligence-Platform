@@ -250,6 +250,9 @@ class InvestigationSummaryDTO(BaseModel):
     key_threat_paths: List[ThreatPath] = Field(default_factory=list)
     timeline: List[TimelineEventDTO] = Field(default_factory=list)
     executive_summary: Optional[str] = None
+    attachments_count: int = 0
+    malicious_attachments_count: int = 0
+    high_risk_links: int = 0
 
 
 # ---------------------------------------------------------------------------

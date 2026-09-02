@@ -1,11 +1,7 @@
 import React from 'react';
 import {
-  AlertTriangle,
   ShieldAlert,
-  Sparkles,
-  Link,
   Lock,
-  ChevronRight,
   Eye,
   CheckCircle,
 } from 'lucide-react';

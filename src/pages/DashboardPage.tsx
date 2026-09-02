@@ -7,11 +7,13 @@ import {
   Briefcase,
   SearchCode,
   ArrowRight,
-  RefreshCw,
   Clock,
-  TrendingUp,
   Activity,
   Layers,
+  GitFork,
+  MapPin,
+  FileDown,
+  Server,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -21,15 +23,15 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  Legend,
 } from 'recharts';
 import { StatCard } from '../components/common/StatCard';
 import { SeverityBadge } from '../components/common/SeverityBadge';
 import { threatService } from '../services/threatService';
 import { ThreatRecord } from '../types/threat';
 import { LoadingState } from '../components/common/LoadingState';
+import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
+import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
+import { ThreatIntelModal } from '../components/investigation/ThreatIntelModal';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -37,6 +39,12 @@ export const DashboardPage: React.FC = () => {
   const [recentThreats, setRecentThreats] = useState<ThreatRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'24h' | '7d'>('24h');
+
+  // Active Modals
+  const [activeModal, setActiveModal] = useState<{
+    type: 'map' | 'report' | 'intel' | null;
+    targetId: string | null;
+  }>({ type: null, targetId: null });
 
   useEffect(() => {
     async function loadData() {
@@ -265,35 +273,51 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="overflow-x-auto rounded border border-[#263244] bg-[#111827]">
-          <table className="w-full text-left text-xs border-collapse font-mono">
-            <thead>
-              <tr className="bg-[#151E2E] border-b border-[#263244] text-2xs uppercase tracking-wider text-gray-400">
+        {recentThreats.length === 0 ? (
+          <div className="p-8 text-center bg-[#111827] rounded border border-[#263244] text-xs font-mono text-gray-400 space-y-3">
+            <ShieldAlert className="w-8 h-8 text-blue-400/50 mx-auto" />
+            <p className="text-gray-300 font-semibold">No threat artifacts analyzed yet.</p>
+            <p className="text-3xs text-gray-500">Ingest an RFC 822 email or PDF to initialize the threat telemetry pipeline.</p>
+            <button
+              onClick={() => navigate('/analyze')}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow-md shadow-blue-900/30 transition inline-flex items-center gap-1.5"
+            >
+              <SearchCode className="w-3.5 h-3.5" />
+              <span>Ingest an Email or PDF to Begin</span>
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded border border-[#263244] bg-[#111827]">
+            <table className="w-full text-left text-xs border-collapse font-mono">
+              <thead>
+                <tr className="bg-[#151E2E] border-b border-[#263244] text-2xs uppercase tracking-wider text-gray-400">
                 <th className="py-2.5 px-3">Severity</th>
                 <th className="py-2.5 px-3">Email Subject</th>
                 <th className="py-2.5 px-3">Sender Identity</th>
                 <th className="py-2.5 px-3">Threat Vector</th>
                 <th className="py-2.5 px-3">Risk Score</th>
                 <th className="py-2.5 px-3">Detected</th>
-                <th className="py-2.5 px-3 text-right">Action</th>
+                <th className="py-2.5 px-3 text-right">Quick Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1E293B]">
               {recentThreats.map((item) => (
                 <tr
                   key={item.id}
-                  onClick={() => navigate(`/analyze/${item.emailId}`)}
-                  className="hover:bg-[#151E2E]/80 transition cursor-pointer group"
+                  className="hover:bg-[#151E2E]/80 transition group"
                 >
                   <td className="py-2.5 px-3">
                     <SeverityBadge severity={item.severity} size="sm" />
                   </td>
                   <td className="py-2.5 px-3">
-                    <span className="font-semibold text-gray-100 group-hover:text-blue-400 transition truncate max-w-xs block font-sans">
+                    <span
+                      onClick={() => navigate(`/analyze/${item.emailId}`)}
+                      className="font-semibold text-gray-100 group-hover:text-blue-400 cursor-pointer transition truncate max-w-xs block font-sans"
+                    >
                       {item.subject}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 text-gray-300 truncate max-w-[200px]">
+                  <td className="py-2.5 px-3 text-gray-300 truncate max-w-[180px]">
                     {item.sender}
                   </td>
                   <td className="py-2.5 px-3">
@@ -307,17 +331,87 @@ export const DashboardPage: React.FC = () => {
                   <td className="py-2.5 px-3 text-gray-400 text-2xs whitespace-nowrap">
                     {item.detectedAt}
                   </td>
-                  <td className="py-2.5 px-3 text-right">
-                    <button className="px-2.5 py-1 bg-[#1E293B] hover:bg-blue-600 hover:text-white rounded text-2xs text-gray-300 border border-[#263244] transition">
-                      Investigate
-                    </button>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1.5 font-mono">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/investigations/${item.emailId}`);
+                        }}
+                        className="px-2 py-1 bg-[#1E293B] hover:bg-purple-900/60 text-purple-300 hover:text-white rounded text-3xs border border-[#263244] transition flex items-center gap-1"
+                        title="Open Interactive Threat Graph"
+                      >
+                        <GitFork className="w-3 h-3 text-purple-400" />
+                        <span>Graph</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveModal({ type: 'map', targetId: item.emailId });
+                        }}
+                        className="px-2 py-1 bg-[#1E293B] hover:bg-blue-900/60 text-blue-300 hover:text-white rounded text-3xs border border-[#263244] transition flex items-center gap-1"
+                        title="Open Geographic Threat Map"
+                      >
+                        <MapPin className="w-3 h-3 text-blue-400" />
+                        <span>Map</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveModal({ type: 'report', targetId: item.emailId });
+                        }}
+                        className="px-2 py-1 bg-[#1E293B] hover:bg-blue-600 hover:text-white text-gray-300 rounded text-3xs border border-[#263244] transition flex items-center gap-1"
+                        title="Open Executive DFIR Report"
+                      >
+                        <FileDown className="w-3 h-3" />
+                        <span>Report</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveModal({ type: 'intel', targetId: item.emailId });
+                        }}
+                        className="px-2 py-1 bg-[#1E293B] hover:bg-purple-600 hover:text-white text-gray-300 rounded text-3xs border border-[#263244] transition flex items-center gap-1"
+                        title="Open Threat Intel Feeds & Sandbox Detonation"
+                      >
+                        <Server className="w-3 h-3 text-purple-400" />
+                        <span>Intel</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
       </div>
+
+      {/* Global Modals for Quick Pivot Actions */}
+      {activeModal.targetId && (
+        <>
+          <ThreatMapModal
+            investigationId={activeModal.targetId}
+            isOpen={activeModal.type === 'map'}
+            onClose={() => setActiveModal({ type: null, targetId: null })}
+          />
+
+          <DFIRReportModal
+            investigationId={activeModal.targetId}
+            isOpen={activeModal.type === 'report'}
+            onClose={() => setActiveModal({ type: null, targetId: null })}
+          />
+
+          <ThreatIntelModal
+            investigationId={activeModal.targetId}
+            isOpen={activeModal.type === 'intel'}
+            onClose={() => setActiveModal({ type: null, targetId: null })}
+          />
+        </>
+      )}
     </div>
   );
 };

@@ -1,21 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ThreatIntelItem,
-  SandboxReport,
   EnrichedInvestigation,
   ProcessTreeNode,
 } from '../../types/threatIntel';
 import { threatIntelService } from '../../services/threatIntelService';
 import { LoadingState } from '../common/LoadingState';
 import {
-  ShieldAlert,
-  ShieldCheck,
   AlertTriangle,
-  ExternalLink,
   Copy,
   Check,
   X,
-  Layers,
   Search,
   RefreshCw,
   Cpu,
@@ -25,7 +19,6 @@ import {
   Terminal,
   Network,
   Database,
-  Tag,
   Zap,
 } from 'lucide-react';
 

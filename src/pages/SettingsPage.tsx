@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, User, Sliders, ShieldCheck, Key, Save, Check } from 'lucide-react';
+import { Settings as SettingsIcon, User, Sliders, ShieldCheck, Save, Check } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
   const [name, setName] = useState('Dhruv Sharma');

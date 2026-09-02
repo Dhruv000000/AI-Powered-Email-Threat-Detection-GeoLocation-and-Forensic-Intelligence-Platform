@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, X, Globe, Link, Server, User, HardDrive, FileCode, ArrowRight } from 'lucide-react';
-import { CytoscapeNode, EntityType } from '../../types/investigation';
+import { CytoscapeNode } from '../../types/investigation';
 
 interface EntitySearchModalProps {
   nodes: CytoscapeNode[];

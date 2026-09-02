@@ -3,7 +3,7 @@ import { ThreatRouteMap } from './ThreatRouteMap';
 import { threatMapService } from '../../services/threatMapService';
 import { ThreatMapData } from '../../types/threatMap';
 import { LoadingState } from '../common/LoadingState';
-import { X, MapPin, AlertOctagon, ExternalLink } from 'lucide-react';
+import { X, MapPin, AlertOctagon } from 'lucide-react';
 
 interface ThreatMapModalProps {
   investigationId: string;

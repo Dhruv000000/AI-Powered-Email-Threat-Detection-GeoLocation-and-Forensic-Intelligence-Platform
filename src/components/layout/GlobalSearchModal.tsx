@@ -118,11 +118,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const handleClose = React.useCallback(() => {
+    setQuery('');
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 50);
-    } else {
-      setQuery('');
     }
   }, [isOpen]);
 
@@ -131,16 +134,15 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        if (isOpen) onClose();
-        else onClose(); // parent handles toggle
+        handleClose();
       }
       if (e.key === 'Escape' && isOpen) {
-        onClose();
+        handleClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen) return null;
 
@@ -199,7 +201,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-1.5 py-0.5 rounded text-[10px] font-mono text-gray-400 bg-[#0B1120] border border-[#263244]"
           >
             ESC
@@ -210,7 +212,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
         <div className="max-h-96 overflow-y-auto p-2 space-y-1 divide-y divide-[#1E293B]">
           {filtered.length === 0 ? (
             <div className="py-8 text-center text-xs text-gray-400">
-              No matching intelligence entities found for "{query}"
+              No matching intelligence entities found for &quot;{query}&quot;
             </div>
           ) : (
             filtered.map((item) => {
@@ -220,7 +222,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
                   key={item.id}
                   onClick={() => {
                     navigate(item.linkTo);
-                    onClose();
+                    handleClose();
                   }}
                   className="flex items-center justify-between p-2.5 rounded-lg hover:bg-[#1B263B] transition cursor-pointer group"
                 >

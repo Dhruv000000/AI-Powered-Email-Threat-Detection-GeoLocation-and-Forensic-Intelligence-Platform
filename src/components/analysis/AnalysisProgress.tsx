@@ -26,21 +26,16 @@ interface AnalysisProgressProps {
 
 export const AnalysisProgress: React.FC<AnalysisProgressProps> = ({ fileName, isReady = true, onComplete }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [isDone, setIsDone] = useState(false);
+  const isDone = currentStepIndex >= ANALYSIS_STEPS.length;
 
   useEffect(() => {
-    let timeoutId: any;
-
     if (currentStepIndex < ANALYSIS_STEPS.length) {
       const step = ANALYSIS_STEPS[currentStepIndex];
-      timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setCurrentStepIndex((prev) => prev + 1);
       }, step.durationMs);
-    } else {
-      setIsDone(true);
+      return () => clearTimeout(timeoutId);
     }
-
-    return () => clearTimeout(timeoutId);
   }, [currentStepIndex]);
 
   return (

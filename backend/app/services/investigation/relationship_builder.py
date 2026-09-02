@@ -387,6 +387,22 @@ class RelationshipBuilder:
                         confidence=1.0,
                     )
 
+                    # Domain -> Resolved IP relationship
+                    from app.services.geo.geo_resolver import geo_resolver
+                    resolved_geo = geo_resolver.resolve_ip(norm_domain)
+                    if resolved_geo and resolved_geo.ip and not resolved_geo.is_bogon:
+                        res_ip_norm, _, _ = EntityBuilder.normalize_ip(resolved_geo.ip)
+                        if res_ip_norm:
+                            res_ip_id = f"ip:{res_ip_norm}"
+                            self._add_relationship(
+                                source_id=dom_id,
+                                target_id=res_ip_id,
+                                rel_type="RESOLVES_TO",
+                                provenance_source="forensic_rule",
+                                source_reference=f"dns_resolution:{norm_domain}",
+                                confidence=0.98,
+                            )
+
                 # If URL hostname is IP: (:URL)-[:POINTS_TO_IP]->(:IPAddress)
                 if is_ip_based and hostname:
                     ip_norm, _, _ = EntityBuilder.normalize_ip(hostname)

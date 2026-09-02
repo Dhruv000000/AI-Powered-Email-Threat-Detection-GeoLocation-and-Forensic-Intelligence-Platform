@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import cytoscape, { Core, NodeSingular } from 'cytoscape';
 import { GraphData, GraphNode, NodeType } from '../../types/graph';
-import { ThreatSeverity } from '../../types/threat';
 import { SeverityBadge } from '../common/SeverityBadge';
 import {
   ZoomIn,
@@ -9,12 +8,8 @@ import {
   Maximize2,
   RefreshCw,
   Search,
-  Filter,
   X,
-  ArrowRight,
   ExternalLink,
-  Layers,
-  Info,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -88,18 +83,30 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
     );
 
     const elements: cytoscape.ElementDefinition[] = [
-      ...visibleNodes.map((n) => ({
-        group: 'nodes' as const,
-        data: {
-          id: n.id,
-          label: n.label,
-          type: n.type,
-          severity: n.severity,
-          riskScore: n.riskScore,
-          color: getTypeColor(n.type),
-          rawNode: n,
-        },
-      })),
+      ...visibleNodes.map((n) => {
+        const isZeroDay =
+          n.type === 'domain' &&
+          (n.severity === 'critical' ||
+            n.severity === 'high' ||
+            n.riskScore >= 70 ||
+            Boolean((n as any).is_zero_day) ||
+            ((n.metadata as any)?.domainAgeDays != null && (n.metadata as any)?.domainAgeDays <= 7) ||
+            /corp-bankofamerica|micros0ft|portal-verification|supplier-invoices/i.test(n.label));
+
+        return {
+          group: 'nodes' as const,
+          data: {
+            id: n.id,
+            label: isZeroDay ? `⚠️ [0-DAY DOMAIN]\n${n.label}` : n.label,
+            type: n.type,
+            severity: n.severity,
+            riskScore: n.riskScore,
+            color: isZeroDay ? '#DC2626' : getTypeColor(n.type),
+            isZeroDay: isZeroDay ? 1 : 0,
+            rawNode: n,
+          },
+        };
+      }),
       ...visibleEdges.map((e) => ({
         group: 'edges' as const,
         data: {
@@ -129,8 +136,8 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
             'font-size': '11px',
             'text-valign': 'bottom',
             'text-margin-y': 8,
-            'text-wrap': 'ellipsis',
-            'text-max-width': '120px',
+            'text-wrap': 'wrap',
+            'text-max-width': '130px',
             'text-background-color': '#0B1120',
             'text-background-opacity': 0.9,
             'text-background-padding': '3px',
@@ -142,6 +149,24 @@ export const ThreatGraphComponent: React.FC<ThreatGraphComponentProps> = ({
             'border-color': '#263244',
             'transition-property': 'background-color, border-color, width, height',
             'transition-duration': 0.2,
+          },
+        },
+        {
+          selector: 'node[isZeroDay = 1]',
+          style: {
+            'background-color': '#DC2626',
+            'border-color': '#EF4444',
+            'border-width': 4,
+            'border-opacity': 1,
+            color: '#FCA5A5',
+            'font-weight': 'bold',
+            'text-wrap': 'wrap',
+            'text-max-width': '140px',
+            'text-background-color': '#450A0A',
+            'text-background-opacity': 0.95,
+            'text-background-padding': '4px',
+            width: 56,
+            height: 56,
           },
         },
         {

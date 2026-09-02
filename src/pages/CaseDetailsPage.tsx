@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Briefcase,
   ArrowLeft,
   Shield,
   FileText,
   Mail,
   Server,
   Globe,
-  Link2,
   Clock,
   MessageSquare,
   FileCheck,
   Download,
   Plus,
-  Edit,
-  CheckCircle2,
   GitFork,
   ExternalLink,
 } from 'lucide-react';

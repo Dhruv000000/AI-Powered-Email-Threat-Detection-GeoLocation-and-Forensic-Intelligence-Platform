@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   InvestigationDetail,
@@ -22,7 +22,7 @@ import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
 import { ThreatIntelModal } from '../components/investigation/ThreatIntelModal';
 import { LoadingState } from '../components/common/LoadingState';
-import { AlertTriangle, RefreshCw, GitFork } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 export const InvestigationPage: React.FC = () => {
   const { investigationId } = useParams<{ investigationId: string }>();
@@ -48,88 +48,101 @@ export const InvestigationPage: React.FC = () => {
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [highlightedEdgeIds, setHighlightedEdgeIds] = useState<string[]>([]);
 
-  const loadData = useCallback(async (force = false) => {
-    let targetId = investigationId;
-
-    try {
-      if (force) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      setError(null);
-
-      // If no investigationId in route params, fetch the latest one from the database
-      if (!targetId) {
-        const list = await investigationService.listInvestigations();
-        if (list.length > 0) {
-          targetId = list[0].investigation_id;
-        } else {
-          setError('No investigations found. Please analyze an email first.');
-          return;
-        }
-      }
-
-      // 1. Trigger or Fetch Investigation
-      let invData: InvestigationDetail;
-      if (targetId.startsWith('INV-')) {
-        invData = await investigationService.getInvestigation(targetId);
-      } else {
-        invData = await investigationService.createInvestigation(
-          targetId,
-          force,
-          'direct'
-        );
-      }
-
-      // 2. Fetch Graph Data
-      const gData = await investigationService.getInvestigationGraph(
-        invData.investigation_id
-      );
-      setGraphData(gData);
-
-      // 3. Fallback check for findings and threat paths if empty in summary
-      if (!invData.summary?.top_findings || invData.summary.top_findings.length === 0) {
-        try {
-          const liveFindings = await investigationService.getInvestigationFindings(invData.investigation_id);
-          if (liveFindings && liveFindings.length > 0) {
-            invData.summary = {
-              ...invData.summary,
-              top_findings: liveFindings,
-            } as any;
-          }
-        } catch (e) {
-          console.warn('[InvestigationPage] Failed to fetch live findings:', e);
-        }
-      }
-
-      if (!invData.summary?.key_threat_paths || invData.summary.key_threat_paths.length === 0) {
-        try {
-          const livePaths = await investigationService.getThreatPaths(invData.investigation_id);
-          if (livePaths && livePaths.length > 0) {
-            invData.summary = {
-              ...invData.summary,
-              key_threat_paths: livePaths,
-            } as any;
-          }
-        } catch (e) {
-          console.warn('[InvestigationPage] Failed to fetch live threat paths:', e);
-        }
-      }
-
-      setInvestigation(invData);
-    } catch (err: any) {
-      console.error('Failed to load investigation:', err);
-      setError(err.message || 'Unable to construct threat investigation graph.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [investigationId]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    loadData(false);
-  }, [loadData]);
+    let isMounted = true;
+    let targetId = investigationId;
+
+    async function loadData() {
+      try {
+        if (!targetId) {
+          const list = await investigationService.listInvestigations();
+          if (list.length > 0) {
+            targetId = list[0].investigation_id;
+          } else {
+            if (isMounted) {
+              setError('No investigations found. Please analyze an email first.');
+              setLoading(false);
+            }
+            return;
+          }
+        }
+
+        // 1. Trigger or Fetch Investigation
+        let invData: InvestigationDetail;
+        if (targetId.startsWith('INV-')) {
+          invData = await investigationService.getInvestigation(targetId);
+        } else {
+          invData = await investigationService.createInvestigation(
+            targetId,
+            refreshKey > 0,
+            'direct'
+          );
+        }
+
+        // 2. Fetch Graph Data
+        const gData = await investigationService.getInvestigationGraph(
+          invData.investigation_id
+        );
+
+        // 3. Fallback check for findings and threat paths if empty in summary
+        if (!invData.summary?.top_findings || invData.summary.top_findings.length === 0) {
+          try {
+            const liveFindings = await investigationService.getInvestigationFindings(invData.investigation_id);
+            if (liveFindings && liveFindings.length > 0) {
+              invData.summary = {
+                ...invData.summary,
+                top_findings: liveFindings,
+              } as any;
+            }
+          } catch {
+            // Ignored
+          }
+        }
+
+        if (!invData.summary?.key_threat_paths || invData.summary.key_threat_paths.length === 0) {
+          try {
+            const livePaths = await investigationService.getThreatPaths(invData.investigation_id);
+            if (livePaths && livePaths.length > 0) {
+              invData.summary = {
+                ...invData.summary,
+                key_threat_paths: livePaths,
+              } as any;
+            }
+          } catch {
+            // Ignored
+          }
+        }
+
+        if (isMounted) {
+          setGraphData(gData);
+          setInvestigation(invData);
+          setError(null);
+        }
+      } catch (err: any) {
+        console.error('Failed to load investigation:', err);
+        if (isMounted) {
+          setError(err.message || 'Unable to construct threat investigation graph.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    }
+
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, [investigationId, refreshKey]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setRefreshKey((k) => k + 1);
+  };
 
   // Synchronize Highlights when Finding is selected
   const handleSelectFinding = (finding: InvestigationFinding | null) => {
@@ -220,7 +233,7 @@ export const InvestigationPage: React.FC = () => {
               Back to Threats Feed
             </button>
             <button
-              onClick={() => loadData(true)}
+              onClick={handleRefresh}
               className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition flex items-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -241,7 +254,7 @@ export const InvestigationPage: React.FC = () => {
       {/* Top Header Bar */}
       <InvestigationHeader
         investigation={investigation}
-        onRefresh={() => loadData(true)}
+        onRefresh={handleRefresh}
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenThreatMap={() => setIsThreatMapOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}

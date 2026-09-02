@@ -4,8 +4,6 @@ import {
   Share2,
   Lock,
   ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
 } from 'lucide-react';
 import { CytoscapeEdge } from '../../types/investigation';
 

@@ -1,15 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   X,
-  Shield,
   Lock,
-  Network,
-  Share2,
-  ExternalLink,
-  CheckCircle2,
-  AlertTriangle,
   ArrowRight,
-  Info,
 } from 'lucide-react';
 import { EntityDetail, CytoscapeNode } from '../../types/investigation';
 import { investigationService } from '../../services/investigationService';
@@ -32,11 +25,9 @@ export const EntityDetailsDrawer: React.FC<EntityDetailsDrawerProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!selectedNode) {
-      setDetail(null);
-      return;
-    }
+    if (!selectedNode) return;
 
+    let isMounted = true;
     async function loadEntity() {
       if (!selectedNode) return;
       setLoading(true);
@@ -44,11 +35,16 @@ export const EntityDetailsDrawer: React.FC<EntityDetailsDrawerProps> = ({
         investigationId,
         selectedNode.id
       );
-      setDetail(data);
-      setLoading(false);
+      if (isMounted) {
+        setDetail(data);
+        setLoading(false);
+      }
     }
 
     loadEntity();
+    return () => {
+      isMounted = false;
+    };
   }, [investigationId, selectedNode]);
 
   if (!selectedNode) return null;
@@ -62,6 +58,7 @@ export const EntityDetailsDrawer: React.FC<EntityDetailsDrawerProps> = ({
           <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-gray-100">
             Entity Intelligence Profile
           </h3>
+          {loading && <span className="text-3xs text-purple-400 font-mono animate-pulse">Loading...</span>}
         </div>
         <button
           onClick={onClose}

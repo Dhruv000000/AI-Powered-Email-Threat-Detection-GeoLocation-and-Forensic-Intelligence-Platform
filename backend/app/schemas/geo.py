@@ -41,6 +41,8 @@ class ThreatMapHopDTO(BaseModel):
     location: Optional[GeoLocationDTO] = None
     is_origin: bool = False
     is_destination: bool = False
+    is_target: bool = False
+    role: Optional[str] = None
     is_suspicious: bool = False
     is_anomaly: bool = False
     anomaly_reason: Optional[str] = None
@@ -56,3 +58,4 @@ class ThreatMapResponse(BaseModel):
     anomalies: List[str] = Field(default_factory=list)
     risk_score: Optional[int] = None
     threat_type: Optional[str] = None
+    severity: Optional[str] = None

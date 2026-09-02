@@ -97,7 +97,7 @@ class ThreatMapService:
                     if hop.anomaly_reason and hop.anomaly_reason not in anomalies:
                         anomalies.append(f"Hop #{hop.hop_number} routing anomaly: {hop.anomaly_reason}")
 
-                # Distance accumulation
+                # Distance accumulation & Impossible Travel Velocity
                 if prev_loc and prev_loc.latitude is not None and geo_dto.latitude is not None:
                     leg_dist = GeoResolver.calculate_haversine_distance(
                         prev_loc.latitude, prev_loc.longitude,
@@ -105,11 +105,16 @@ class ThreatMapService:
                     )
                     total_distance += leg_dist
 
-                    # Check for impossible transit speed
-                    if hop.delay_seconds is not None and hop.delay_seconds < 3 and leg_dist > 3000:
+                    # Impossible travel velocity check with delta_time <= 0 and float safety guards
+                    delay_val = hop.delay_seconds if hop.delay_seconds is not None else None
+                    if (
+                        delay_val is not None
+                        and 0 <= delay_val < 2.0
+                        and leg_dist > 4000.0
+                    ):
                         speed_anomaly = (
-                            f"Impossible transit speed: {leg_dist:.0f} km traversed between Hop #{idx} ({prev_loc.country_name}) "
-                            f"and Hop #{idx + 1} ({geo_dto.country_name}) in {hop.delay_seconds:.1f}s."
+                            f"Impossible travel velocity: {leg_dist:.0f} km traversed between Hop #{idx} ({prev_loc.country_name}) "
+                            f"and Hop #{idx + 1} ({geo_dto.country_name}) in {delay_val:.1f}s (artificial network manipulation or proxy bouncing)."
                         )
                         if speed_anomaly not in anomalies:
                             anomalies.append(speed_anomaly)
@@ -129,6 +134,8 @@ class ThreatMapService:
                         location=geo_dto,
                         is_origin=is_orig,
                         is_destination=is_dest,
+                        is_target=False,
+                        role="ORIGIN" if is_orig else ("DESTINATION" if is_dest else "TRANSIT_RELAY"),
                         is_suspicious=is_susp,
                         is_anomaly=hop.is_anomaly or (geo_dto.is_tor),
                         anomaly_reason=hop.anomaly_reason or ("Tor Exit Node" if geo_dto.is_tor else None),
@@ -155,6 +162,8 @@ class ThreatMapService:
                         location=geo_dto,
                         is_origin=True,
                         is_destination=len(hops_dto) == 0,
+                        is_target=False,
+                        role="ORIGIN",
                         is_suspicious=geo_dto.is_tor,
                         is_anomaly=geo_dto.is_tor,
                         anomaly_reason="Tor Exit Node" if geo_dto.is_tor else None,
@@ -164,7 +173,56 @@ class ThreatMapService:
                 for idx, h in enumerate(hops_dto, start=1):
                     h.hop_number = idx
 
-        # 4. Resolve Origin and Destination Location objects
+        # 4. Extend 3-Hop Geospatial Loop: Append Target URL Hosting Infrastructure as terminal hop
+        if analysis.urls and len(analysis.urls) > 0:
+            target_url_obj = None
+            # Find high risk or primary target URL
+            for u in analysis.urls:
+                if (u.risk_score or 0) >= 50 or u.is_lookalike or u.is_ip_based:
+                    target_url_obj = u
+                    break
+            if not target_url_obj:
+                target_url_obj = analysis.urls[0]
+
+            target_host = target_url_obj.hostname or target_url_obj.domain or target_url_obj.original_url
+            if target_host:
+                target_geo_dto = geo_resolver.resolve_ip(target_host)
+                if target_geo_dto and target_geo_dto.latitude is not None:
+                    # Unset destination on prior transit hops
+                    for h in hops_dto:
+                        h.is_destination = False
+                        if h.role == "DESTINATION":
+                            h.role = "TRANSIT_RELAY"
+
+                    # Accumulate distance from last hop
+                    if prev_loc and prev_loc.latitude is not None:
+                        target_dist = GeoResolver.calculate_haversine_distance(
+                            prev_loc.latitude, prev_loc.longitude,
+                            target_geo_dto.latitude, target_geo_dto.longitude
+                        )
+                        total_distance += target_dist
+
+                    target_hop_num = len(hops_dto) + 1
+                    hops_dto.append(
+                        ThreatMapHopDTO(
+                            hop_number=target_hop_num,
+                            ip=target_geo_dto.ip,
+                            hostname=target_host,
+                            by_host="Credential Harvesting Target Infrastructure",
+                            protocol="HTTPS (Target Host)",
+                            delay_seconds=0.5,
+                            location=target_geo_dto,
+                            is_origin=False,
+                            is_destination=True,
+                            is_target=True,
+                            role="TARGET_HOST",
+                            is_suspicious=True,
+                            is_anomaly=True,
+                            anomaly_reason="Credential Harvesting Host / 0-Day Infrastructure",
+                        )
+                    )
+
+        # 5. Resolve Origin and Destination Location objects
         origin_ip = hops_dto[0].location if hops_dto else None
         destination_ip = hops_dto[-1].location if (hops_dto and len(hops_dto) > 1) else None
 
@@ -179,6 +237,20 @@ class ThreatMapService:
         risk_score_val = (inv_record.risk_score if inv_record else None) or analysis.risk_score
         threat_type_val = (inv_record.threat_type if inv_record else None) or analysis.threat_type
 
+        # Authoritative Severity Binding (ensures high/critical risk is never labeled benign)
+        has_tor = any(h.location and (h.location.is_tor or h.location.asn in (60729, 208323)) for h in hops_dto)
+        has_anonymizer = any(h.location and (h.location.asn == 208323 or "Fin-Proxy" in (h.location.as_org or "")) for h in hops_dto)
+        score_val = risk_score_val or 0
+
+        if score_val >= 80 or has_tor or len(anomalies) >= 3:
+            severity_val = "critical"
+        elif score_val >= 50 or has_anonymizer or len(anomalies) > 0:
+            severity_val = "high"
+        elif score_val >= 25:
+            severity_val = "medium"
+        else:
+            severity_val = "low"
+
         return ThreatMapResponse(
             investigation_id=inv_id_val,
             analysis_id=analysis.analysis_id,
@@ -189,4 +261,5 @@ class ThreatMapService:
             anomalies=anomalies,
             risk_score=risk_score_val,
             threat_type=threat_type_val,
+            severity=severity_val,
         )

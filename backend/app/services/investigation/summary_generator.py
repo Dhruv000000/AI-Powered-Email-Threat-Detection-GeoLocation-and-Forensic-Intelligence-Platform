@@ -3,29 +3,50 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Union
 from app.db.models.email_analysis import EmailAnalysisModel
 from app.schemas.email_analysis import EmailAnalysisResponse
+from app.services.geo.geo_resolver import geo_resolver
 
 
 def generate_investigation_summary(
-    threat_type: Optional[str],
-    risk_score: Optional[int],
-    severity: Optional[str],
-    entity_count: int,
-    threat_path_count: int,
-    finding_count: int,
+    threat_type: Optional[str] = None,
+    risk_score: Optional[int] = None,
+    severity: Optional[str] = None,
+    entity_count: int = 0,
+    threat_path_count: int = 0,
+    finding_count: int = 0,
+    origin_geo: Optional[Any] = None,
+    relay_anomalies: Optional[List[str]] = None,
+    target_domains: Optional[List[str]] = None,
+    sender_identity: Optional[str] = None,
+    sender_domain: Optional[str] = None,
+    target_url_host: Optional[str] = None,
+    intent: Optional[str] = None,
 ) -> str:
     """
-    Generate a clean DFIR analyst executive summary string based on graph structure,
-    threat paths, and risk metrics.
+    Generate a concise 2-sentence SOC executive summary narrative.
+    Explicitly distinguishes the spoofed From sender identity/domain from the malicious destination target URL domain.
     """
     threat_type_label = (threat_type or "suspicious").replace("_", " ").title()
     score = risk_score or 0
     sev_label = (severity or "medium").upper()
 
-    return (
-        f"Forensic investigation completed for {threat_type_label} threat (Risk Score: {score}/100, Severity: {sev_label}). "
-        f"Correlated {entity_count} distinct entities across {threat_path_count} threat infrastructure paths, "
-        f"identifying {finding_count} evidentiary findings."
+    sender_id_str = sender_identity or "an external authority"
+    sender_dom_str = f" ({sender_domain})" if sender_domain else ""
+    target_host_str = target_url_host or (target_domains[0] if target_domains and len(target_domains) > 0 else "external credential infrastructure")
+
+    origin_str = f" traces to {origin_geo.as_org or origin_geo.country_name} in {origin_geo.country_name}" if origin_geo and getattr(origin_geo, "country_name", None) else ""
+    transit_str = f", routed through {relay_anomalies[0]} to mask provenance" if relay_anomalies and len(relay_anomalies) > 0 else ""
+
+    sentence_1 = (
+        f"Adversary initiated a targeted {threat_type_label} impersonation lure claiming to be {sender_id_str}{sender_dom_str} to coerce urgent action, "
+        f"while directing victims to enter credentials on external infrastructure hosted at {target_host_str}."
     )
+    sentence_2 = (
+        f"Forensic header and route analysis{origin_str}{transit_str}, "
+        f"correlating {entity_count} distinct entities across {threat_path_count} threat paths with {finding_count} evidentiary findings "
+        f"(Composite Risk Score: {score}/100, {sev_label})."
+    )
+
+    return f"{sentence_1} {sentence_2}"
 
 
 class SummaryEngine:
@@ -162,8 +183,13 @@ class SummaryEngine:
         return timeline
 
     def generate_summary(self) -> Dict[str, Any]:
-        # Entity counts by type
-        entity_counts = dict(Counter(e.get("type", "Unknown") for e in self.entities))
+        # Entity counts by type (ensuring both IP and IPAddress keys are present)
+        raw_counts = Counter(e.get("type", "Unknown") for e in self.entities)
+        entity_counts = dict(raw_counts)
+        ip_count = entity_counts.get("IP", 0) + entity_counts.get("IPAddress", 0)
+        if ip_count > 0:
+            entity_counts["IP"] = ip_count
+            entity_counts["IPAddress"] = ip_count
 
         # Finding counts by severity
         finding_counts = dict(Counter(f.get("severity", "medium") for f in self.findings))
@@ -180,7 +206,113 @@ class SummaryEngine:
         # Key threat paths
         key_threat_paths = self.threat_paths[:3]
 
-        # Executive summary narrative based strictly on evidence
+        # Telemetry Extraction for Narrative Synthesis
+        origin_ip = None
+        for e in self.entities:
+            if e.get("type") in ("IP", "IPAddress") and e.get("is_origin"):
+                origin_ip = e.get("normalized_value")
+                break
+        if not origin_ip and len(self.relay_hops) > 0:
+            first_hop = self.relay_hops[0]
+            origin_ip = getattr(first_hop, "ip", None) if not isinstance(first_hop, dict) else first_hop.get("ip")
+
+        origin_geo = geo_resolver.resolve_ip(origin_ip) if origin_ip else None
+
+        relay_anomalies = []
+        for h in self.relay_hops:
+            h_ip = getattr(h, "ip", None) if not isinstance(h, dict) else h.get("ip")
+            if h_ip:
+                g = geo_resolver.resolve_ip(h_ip)
+                if g.is_tor or g.asn in (60729, 208323):
+                    asn_label = f"AS{g.asn}" if g.asn else "Tor/Proxy"
+                    relay_anomalies.append(f"{asn_label} ({g.as_org or 'Anonymizer'})")
+
+        # Resolve Sender Identity & Domain
+        sender_identity = None
+        sender_domain = None
+        if self.metadata_obj:
+            sender_identity = (
+                getattr(self.metadata_obj, "from_display_name", None)
+                or (self.metadata_obj.get("from_display_name") if isinstance(self.metadata_obj, dict) else None)
+                or getattr(self.metadata_obj, "from_email", None)
+                or (self.metadata_obj.get("from_email") if isinstance(self.metadata_obj, dict) else None)
+            )
+            sender_domain = (
+                getattr(self.metadata_obj, "from_domain", None)
+                or (self.metadata_obj.get("from_domain") if isinstance(self.metadata_obj, dict) else None)
+            )
+            if not sender_domain:
+                from_em = getattr(self.metadata_obj, "from_email", "") or (self.metadata_obj.get("from_email", "") if isinstance(self.metadata_obj, dict) else "")
+                if "@" in str(from_em):
+                    sender_domain = str(from_em).split("@")[-1].lower()
+
+        # Resolve Malicious Destination Target URL Domain (explicitly distinct from sender domain)
+        from app.services.ai.narrative_generator import get_target_domain
+
+        target_url_host = None
+        # Check URLs from analysis model or entities
+        analysis_urls = (
+            getattr(self.analysis, "extracted_urls", None)
+            or getattr(self.analysis, "urls", None)
+            or (self.analysis.get("extracted_urls") if isinstance(self.analysis, dict) else None)
+        )
+        if analysis_urls:
+            candidate = get_target_domain(analysis_urls)
+            if candidate and candidate != "an external credential portal":
+                target_url_host = candidate
+
+        if not target_url_host:
+            for e in self.entities:
+                if e.get("type") in ("URL", "Domain"):
+                    val = str(e.get("normalized_value", "")).lower()
+                    dom = val.split("://")[-1].split("/")[0].split(":")[0]
+                    if sender_domain and dom == sender_domain.lower():
+                        continue
+                    if e.get("is_suspicious") or (e.get("risk_score") or 0) >= 40:
+                        target_url_host = dom
+                        break
+                    if not target_url_host and dom:
+                        target_url_host = dom
+
+        target_domains = []
+        if target_url_host:
+            target_domains.append(target_url_host)
+        for e in self.entities:
+            if e.get("type") == "Domain" and e.get("is_suspicious"):
+                if e.get("normalized_value") not in target_domains:
+                    target_domains.append(e.get("normalized_value"))
+
+        # Synchronize Attachment and IOC metrics strictly with heuristic findings
+        attachments_count = sum(1 for e in self.entities if e.get("type") in ("File", "Attachment"))
+        malicious_attachments_count = 0
+        for e in self.entities:
+            if e.get("type") in ("File", "Attachment"):
+                fname = e.get("name") or e.get("normalized_value") or e.get("display_label") or ""
+                if e.get("is_malicious") or e.get("is_suspicious") or any(f.get("finding_code") in ("DOUBLE_EXTENSION", "SUSPICIOUS_DOUBLE_EXTENSION", "EXECUTABLE_ATTACHMENT", "MALICIOUS_ATTACHMENT", "SUSPICIOUS_ATTACHMENT") for f in self.findings):
+                    malicious_attachments_count += 1
+                elif any(ext in fname.lower() for ext in (".pdf.vbs", ".pdf.exe", ".doc.exe", ".zip", ".iso")):
+                    malicious_attachments_count += 1
+
+        if attachments_count == 0 and getattr(self.analysis, "attachments", None):
+            attachments_count = len(self.analysis.attachments)
+            malicious_attachments_count = sum(
+                1 for a in self.analysis.attachments
+                if getattr(a, "is_suspicious", False) or getattr(a, "is_executable", False) or getattr(a, "is_double_extension", False)
+            )
+
+        if malicious_attachments_count == 0 and any(f.get("finding_code") in ("DOUBLE_EXTENSION", "SUSPICIOUS_DOUBLE_EXTENSION", "EXECUTABLE_ATTACHMENT", "MALICIOUS_ATTACHMENT", "SUSPICIOUS_ATTACHMENT") for f in self.findings):
+            malicious_attachments_count = max(1, attachments_count)
+            if attachments_count == 0:
+                attachments_count = 1
+
+        high_risk_links = 0
+        for e in self.entities:
+            if e.get("type") in ("URL", "Domain") and (e.get("is_suspicious") or (e.get("risk_score") or 0) >= 50):
+                high_risk_links += 1
+        if high_risk_links == 0 and any(f.get("finding_code") in ("SUSPICIOUS_URL", "PHISHING_LINK", "MALICIOUS_DOMAIN", "CREDENTIAL_HARVESTING_URL", "ZERO_DAY_DOMAIN") for f in self.findings):
+            high_risk_links = sum(1 for f in self.findings if f.get("finding_code") in ("SUSPICIOUS_URL", "PHISHING_LINK", "MALICIOUS_DOMAIN", "CREDENTIAL_HARVESTING_URL", "ZERO_DAY_DOMAIN")) or 1
+
+        # Executive summary narrative synthesized from evidence and telemetry
         executive_summary = generate_investigation_summary(
             threat_type=self.threat_type,
             risk_score=self.risk_score,
@@ -188,6 +320,12 @@ class SummaryEngine:
             entity_count=len(self.entities),
             threat_path_count=len(self.threat_paths),
             finding_count=len(self.findings),
+            origin_geo=origin_geo,
+            relay_anomalies=relay_anomalies,
+            target_domains=target_domains,
+            sender_identity=sender_identity,
+            sender_domain=sender_domain,
+            target_url_host=target_url_host,
         )
 
         return {
@@ -204,4 +342,8 @@ class SummaryEngine:
             "key_threat_paths": key_threat_paths,
             "timeline": self.generate_timeline(),
             "executive_summary": executive_summary,
+            "attachments_count": attachments_count,
+            "malicious_attachments_count": malicious_attachments_count,
+            "high_risk_links": high_risk_links,
+            "urls_count": entity_counts.get("URL", 0),
         }

@@ -4,7 +4,6 @@ import {
   UploadCloud,
   FileCode,
   Sparkles,
-  ShieldAlert,
   Trash2,
   Play,
   FileText,
@@ -50,7 +49,12 @@ export const AnalyzeEmailPage: React.FC = () => {
     try {
       const buffer = await file.arrayBuffer();
       const hash = await computeSha256(buffer);
-      const content = new TextDecoder().decode(buffer);
+      let content = '';
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        content = `[Binary PDF Artifact: ${file.name}] (${(file.size / 1024).toFixed(1)} KB)`;
+      } else {
+        content = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+      }
 
       setSelectedFile({
         name: file.name,
@@ -61,7 +65,7 @@ export const AnalyzeEmailPage: React.FC = () => {
       });
     } catch (err) {
       console.error('Failed to read file:', err);
-      setAnalysisError('Could not read the selected file. Please verify it is a valid .eml file.');
+      setAnalysisError('Could not read the selected file. Please verify it is a valid .eml, .msg, or .pdf file.');
     }
   };
 
@@ -209,7 +213,7 @@ export const AnalyzeEmailPage: React.FC = () => {
               }`}
             >
               <UploadCloud className="w-4 h-4" />
-              <span>Upload .EML File</span>
+              <span>Upload .EML / .PDF File</span>
             </button>
             <button
               onClick={() => {
@@ -238,16 +242,16 @@ export const AnalyzeEmailPage: React.FC = () => {
                   <UploadCloud className="w-8 h-8" />
                 </div>
                 <h3 className="text-sm font-semibold text-gray-200 font-mono">
-                  Drag & drop RFC 822 <span className="text-blue-400">.EML</span> file here
+                  Drag & drop RFC 822 <span className="text-blue-400">.EML</span> or exported <span className="text-purple-400">.PDF</span> file here
                 </h3>
                 <p className="text-xs text-gray-400 mt-1">or browse local workstation</p>
                 <span className="text-[10px] text-gray-500 font-mono mt-3">
-                  Maximum file size: 25 MB • MIME / Base64 auto-decoded
+                  Maximum file size: 25 MB • MIME / Base64 & PDF text auto-extracted
                 </span>
                 <input
                   id="eml-upload-input"
                   type="file"
-                  accept=".eml,.msg,.txt"
+                  accept=".eml,.msg,.txt,.pdf,application/pdf"
                   onChange={handleFileSelect}
                   className="hidden"
                 />

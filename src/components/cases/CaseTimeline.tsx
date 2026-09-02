@@ -1,7 +1,6 @@
 import React from 'react';
 import { CaseTimelineEvent } from '../../types/case';
 import { Clock, ShieldAlert, Upload, Server, Globe, Briefcase, FileCheck, User } from 'lucide-react';
-import { cn } from '../../lib/utils';
 
 interface CaseTimelineProps {
   events: CaseTimelineEvent[];

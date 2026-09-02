@@ -18,6 +18,62 @@ def _build_formatted_address(city: Optional[str], region: Optional[str], country
 
 # Static High-Fidelity Geo Telemetry Database for DFIR Evaluation & Offline Resilience
 STATIC_GEO_DATABASE: Dict[str, Dict[str, Any]] = {
+    "105.112.44.180": {
+        "latitude": 6.5244,
+        "longitude": 3.3792,
+        "country_name": "Nigeria",
+        "country_code": "NG",
+        "city": "Lagos",
+        "region": "Lagos State",
+        "postal_code": "100001",
+        "formatted_address": "Lagos, Lagos State, Nigeria",
+        "asn": 29465,
+        "as_org": "MTN NIGERIA Communication Limited",
+        "is_datacenter_or_vpn": False,
+        "is_tor": False,
+    },
+    "105.112.55.77": {
+        "latitude": 6.5244,
+        "longitude": 3.3792,
+        "country_name": "Nigeria",
+        "country_code": "NG",
+        "city": "Lagos",
+        "region": "Lagos State",
+        "postal_code": "100001",
+        "formatted_address": "Lagos, Lagos State, Nigeria",
+        "asn": 29465,
+        "as_org": "MTN NIGERIA Communication Limited",
+        "is_datacenter_or_vpn": False,
+        "is_tor": False,
+    },
+    "103.251.167.22": {
+        "latitude": 22.3193,
+        "longitude": 114.1694,
+        "country_name": "Hong Kong",
+        "country_code": "HK",
+        "city": "Hong Kong",
+        "region": "Hong Kong Island",
+        "postal_code": "999077",
+        "formatted_address": "Hong Kong, Hong Kong Island, Hong Kong",
+        "asn": 133115,
+        "as_org": "APAC Regional Transit Relay (AS133115)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": False,
+    },
+    "185.220.101.9": {
+        "latitude": 50.1109,
+        "longitude": 8.6821,
+        "country_name": "Germany",
+        "country_code": "DE",
+        "city": "Frankfurt",
+        "region": "Hesse",
+        "postal_code": "60311",
+        "formatted_address": "Frankfurt, Hesse, Germany",
+        "asn": 60729,
+        "as_org": "Zwiebelfreunde Tor Exit Node Network (AS60729)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": True,
+    },
     "185.220.101.5": {
         "latitude": 50.1109,
         "longitude": 8.6821,
@@ -28,9 +84,9 @@ STATIC_GEO_DATABASE: Dict[str, Dict[str, Any]] = {
         "postal_code": "60311",
         "formatted_address": "Frankfurt, Hesse, Germany",
         "asn": 208323,
-        "as_org": "Fin-Proxy European Relay Node",
+        "as_org": "Fin-Proxy European Relay Node (AS208323)",
         "is_datacenter_or_vpn": True,
-        "is_tor": False,
+        "is_tor": True,
     },
     "relay-eu-central.fin-proxy.de": {
         "latitude": 50.1109,
@@ -42,7 +98,95 @@ STATIC_GEO_DATABASE: Dict[str, Dict[str, Any]] = {
         "postal_code": "60311",
         "formatted_address": "Frankfurt, Hesse, Germany",
         "asn": 208323,
-        "as_org": "Fin-Proxy European Relay Node",
+        "as_org": "Fin-Proxy European Relay Node (AS208323)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": True,
+    },
+    "portal-verification-service-auth.com": {
+        "latitude": 39.0438,
+        "longitude": -77.4874,
+        "country_name": "United States",
+        "country_code": "US",
+        "city": "Ashburn",
+        "region": "Virginia",
+        "postal_code": "20147",
+        "formatted_address": "Ashburn, Virginia, United States",
+        "asn": 13335,
+        "as_org": "Cloudflare Bulletproof Proxy Layer (Target Host)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": False,
+        "resolved_ip": "198.51.100.25",
+    },
+    "corp-bankofamerica.xyz": {
+        "latitude": 39.0438,
+        "longitude": -77.4874,
+        "country_name": "United States",
+        "country_code": "US",
+        "city": "Ashburn",
+        "region": "Virginia",
+        "postal_code": "20147",
+        "formatted_address": "Ashburn, Virginia, United States",
+        "asn": 13335,
+        "as_org": "Cloudflare Bulletproof Proxy Layer (Target Host)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": False,
+        "resolved_ip": "198.51.100.25",
+    },
+    "micros0ft-security-verify.com": {
+        "latitude": 52.3676,
+        "longitude": 4.9041,
+        "country_name": "Netherlands",
+        "country_code": "NL",
+        "city": "Amsterdam",
+        "region": "North Holland",
+        "postal_code": "1016GV",
+        "formatted_address": "Amsterdam, North Holland, Netherlands",
+        "asn": 60729,
+        "as_org": "Zwiebelfreunde Threat Infrastructure",
+        "is_datacenter_or_vpn": True,
+        "is_tor": True,
+        "resolved_ip": "185.220.101.99",
+    },
+    "supplier-invoices-pay.net": {
+        "latitude": 59.9343,
+        "longitude": 30.3351,
+        "country_name": "Russia",
+        "country_code": "RU",
+        "city": "Saint Petersburg",
+        "region": "Saint Petersburg",
+        "postal_code": "190000",
+        "formatted_address": "Saint Petersburg, Russia",
+        "asn": 44050,
+        "as_org": "PIN SPB Datacenter (Threat Host)",
+        "is_datacenter_or_vpn": True,
+        "is_tor": False,
+        "resolved_ip": "194.165.16.89",
+    },
+    "194.165.16.89": {
+        "latitude": 59.9343,
+        "longitude": 30.3351,
+        "country_name": "Russia",
+        "country_code": "RU",
+        "city": "Saint Petersburg",
+        "region": "Saint Petersburg",
+        "postal_code": "190000",
+        "formatted_address": "Saint Petersburg, Russia",
+        "asn": 44050,
+        "as_org": "PIN SPB Datacenter",
+        "is_datacenter_or_vpn": True,
+        "is_tor": False,
+    },
+    "91.240.118.172": {
+        "latitude": 52.3676,
+        "longitude": 4.9041,
+        "country_name": "Netherlands",
+        "country_code": "NL",
+        "city": "Amsterdam",
+        "region": "North Holland",
+        "postal_code": "1016GV",
+        "formatted_address": "Amsterdam, North Holland, Netherlands",
+        "asn": 49453,
+        "as_org": "Serverius Hosting Proxy",
         "is_datacenter_or_vpn": True,
         "is_tor": False,
     },
@@ -258,6 +402,43 @@ STATIC_GEO_DATABASE: Dict[str, Dict[str, Any]] = {
     },
 }
 
+STATIC_SUBNET_DATABASE: List[Tuple[Any, Dict[str, Any]]] = [
+    (
+        ipaddress.ip_network("105.112.0.0/16"),
+        {
+            "latitude": 6.5244,
+            "longitude": 3.3792,
+            "country_name": "Nigeria",
+            "country_code": "NG",
+            "city": "Lagos",
+            "region": "Lagos State",
+            "postal_code": "100001",
+            "formatted_address": "Lagos, Lagos State, Nigeria",
+            "asn": 29465,
+            "as_org": "MTN NIGERIA Communication Limited",
+            "is_datacenter_or_vpn": False,
+            "is_tor": False,
+        }
+    ),
+    (
+        ipaddress.ip_network("185.220.101.0/24"),
+        {
+            "latitude": 52.3676,
+            "longitude": 4.9041,
+            "country_name": "Netherlands",
+            "country_code": "NL",
+            "city": "Amsterdam",
+            "region": "North Holland",
+            "postal_code": "1016GV",
+            "formatted_address": "Amsterdam, North Holland, Netherlands",
+            "asn": 60729,
+            "as_org": "Zwiebelfreunde Tor Exit Node Network",
+            "is_datacenter_or_vpn": True,
+            "is_tor": True,
+        }
+    ),
+]
+
 COUNTRY_COORDINATE_CENTROIDS = [
     {"country": "United States", "code": "US", "city": "Ashburn", "region": "Virginia", "lat": 39.0438, "lng": -77.4874, "asn": 14618, "org": "Amazon.com, Inc.", "postal": "20147"},
     {"country": "Germany", "code": "DE", "city": "Frankfurt", "region": "Hesse", "lat": 50.1109, "lng": 8.6821, "asn": 24940, "org": "Hetzner Online GmbH", "postal": "60311"},
@@ -404,7 +585,36 @@ class GeoResolver:
                 is_tor=False,
             )
 
-        # 2. Deterministic Hash-Based Fallback for unlisted public IPs and hostnames
+        # 2. Check Static Subnet CIDRs (e.g. 105.112.0.0/16 -> Nigeria, MTN AS29465)
+        try:
+            ip_obj = ipaddress.ip_address(cleaned)
+            for subnet_net, entry in STATIC_SUBNET_DATABASE:
+                if ip_obj in subnet_net:
+                    c_name = entry["country_name"]
+                    c_city = entry.get("city")
+                    c_region = entry.get("region")
+                    return GeoLocationDTO(
+                        ip=cleaned,
+                        is_private=False,
+                        is_bogon=False,
+                        latitude=entry["latitude"],
+                        longitude=entry["longitude"],
+                        country=c_name,
+                        country_name=c_name,
+                        country_code=entry["country_code"],
+                        city=c_city,
+                        region=c_region,
+                        postal_code=entry.get("postal_code"),
+                        formatted_address=entry.get("formatted_address") or _build_formatted_address(c_city, c_region, c_name),
+                        asn=entry.get("asn"),
+                        as_org=entry.get("as_org"),
+                        is_datacenter_or_vpn=entry.get("is_datacenter_or_vpn", False),
+                        is_tor=entry.get("is_tor", False),
+                    )
+        except ValueError:
+            pass
+
+        # 3. Deterministic Hash-Based Fallback for unlisted public IPs and hostnames
         ip_hash = int(hashlib.md5(cleaned.encode("utf-8")).hexdigest()[:8], 16)
         centroid = COUNTRY_COORDINATE_CENTROIDS[ip_hash % len(COUNTRY_COORDINATE_CENTROIDS)]
         

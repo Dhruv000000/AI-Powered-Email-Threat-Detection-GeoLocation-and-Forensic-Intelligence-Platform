@@ -1,5 +1,4 @@
 import {
-  ShieldAlert,
   ArrowLeft,
   RefreshCw,
   Search,

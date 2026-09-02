@@ -123,6 +123,17 @@ class ExplanationEngine:
                         weight=95,
                     )
                 )
+                if att.is_double_extension:
+                    reasons.append(
+                        AnalysisReasonSchema(
+                            reason_code="SUSPICIOUS_DOUBLE_EXTENSION",
+                            severity="critical",
+                            title=f"Deceptive Double-Extension Detected: {att.filename}",
+                            description=f"Attachment '{att.filename}' masquerades as a standard document using double extension evasion.",
+                            evidence_reference=f"email_attachments.{att.sha256}",
+                            weight=98,
+                        )
+                    )
 
         # 6. Linguistic Intent & Behavioral Signals
         matches = linguistics.get("matches", {})

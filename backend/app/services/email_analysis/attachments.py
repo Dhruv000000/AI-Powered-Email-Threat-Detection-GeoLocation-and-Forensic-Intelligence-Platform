@@ -30,8 +30,11 @@ class AttachmentAnalyzer:
             payload = att.get("payload_bytes", b"")
             size_bytes = len(payload)
 
-            # Compute SHA-256 hash of payload
-            sha256 = hashlib.sha256(payload).hexdigest()
+            # Compute SHA-256 hash of payload (or filename fallback for plaintext declarations)
+            if payload:
+                sha256 = hashlib.sha256(payload).hexdigest()
+            else:
+                sha256 = hashlib.sha256(filename.encode("utf-8")).hexdigest()
 
             # Analyze filename extensions
             parts = filename.lower().split(".")
@@ -64,6 +67,19 @@ class AttachmentAnalyzer:
                 is_executable = True
                 is_suspicious = True
                 detected_signals.append(f"Executable MIME content type: '{content_type}'")
+
+            # Check explicit plaintext heuristic flags
+            if att.get("is_malicious"):
+                is_suspicious = True
+                if att.get("threat_flag") == "SUSPICIOUS_DOUBLE_EXTENSION" or any(x in filename.lower() for x in [".pdf.exe", ".pdf.vbs", ".doc.exe"]):
+                    is_double_ext = True
+                    is_executable = True
+                    if not any("double-extension" in s.lower() for s in detected_signals):
+                        detected_signals.append(f"Deceptive double-extension detected: '{filename}'")
+                else:
+                    is_executable = True
+                    if not any("executable" in s.lower() for s in detected_signals):
+                        detected_signals.append(f"High-risk executable payload: '{filename}'")
 
             if is_suspicious:
                 if is_executable or is_double_ext:

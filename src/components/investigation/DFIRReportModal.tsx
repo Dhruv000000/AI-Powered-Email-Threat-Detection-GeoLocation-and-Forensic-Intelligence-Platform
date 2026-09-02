@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { DFIRReport, MitreTechnique, RemediationAction, IoCItem } from '../../types/report';
+import { DFIRReport } from '../../types/report';
 import { reportService } from '../../services/reportService';
 import { remediationService } from '../../services/remediationService';
 import { RemediationExecutionLog } from '../../types/remediation';
@@ -16,7 +16,6 @@ import {
   Check,
   X,
   Layers,
-  ListFilter,
   Flame,
   Search,
   Clock,
@@ -61,7 +60,6 @@ export const DFIRReportModal: React.FC<DFIRReportModalProps> = ({
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'P0' | 'P1' | 'P2'>('ALL');
   const [iocSearch, setIocSearch] = useState('');
   const [copiedIoc, setCopiedIoc] = useState<string | null>(null);
-  const [checkedActions, setCheckedActions] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!isOpen || !investigationId) return;
@@ -154,7 +152,6 @@ export const DFIRReportModal: React.FC<DFIRReportModalProps> = ({
     try {
       const res = await remediationService.executeAction(investigationId, actionId, false);
       setExecutionMap((prev) => ({ ...prev, [actionId]: res }));
-      setCheckedActions((prev) => ({ ...prev, [actionId]: true }));
       setRemediationFeedback(`Action ${actionId} successfully enforced across ${res.target_system}.`);
       setTimeout(() => setRemediationFeedback(null), 4000);
     } catch (err: any) {
@@ -178,13 +175,6 @@ export const DFIRReportModal: React.FC<DFIRReportModalProps> = ({
         });
         return updated;
       });
-      setCheckedActions((prev) => {
-        const updated = { ...prev };
-        results.forEach((r) => {
-          updated[r.action_id] = true;
-        });
-        return updated;
-      });
       setRemediationFeedback(`Enforced ${results.length} P0 perimeter containment rules simultaneously.`);
       setTimeout(() => setRemediationFeedback(null), 5000);
     } catch (err: any) {
@@ -203,7 +193,6 @@ export const DFIRReportModal: React.FC<DFIRReportModalProps> = ({
     try {
       const res = await remediationService.rollbackAction(investigationId, logId);
       setExecutionMap((prev) => ({ ...prev, [actionId]: res }));
-      setCheckedActions((prev) => ({ ...prev, [actionId]: false }));
       setRemediationFeedback(`Rule ${actionId} successfully rolled back & perimeter ACL deactivated.`);
       setTimeout(() => setRemediationFeedback(null), 4000);
     } catch (err: any) {
@@ -217,10 +206,6 @@ export const DFIRReportModal: React.FC<DFIRReportModalProps> = ({
     navigator.clipboard.writeText(value);
     setCopiedIoc(value);
     setTimeout(() => setCopiedIoc(null), 2000);
-  };
-
-  const toggleAction = (id: string) => {
-    setCheckedActions((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   if (!isOpen) return null;

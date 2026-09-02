@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CaseNote } from '../../types/case';
-import { MessageSquare, Plus, Pin, Send, User } from 'lucide-react';
+import { MessageSquare, Pin, Send } from 'lucide-react';
 
 interface CaseNotesSectionProps {
   notes: CaseNote[];

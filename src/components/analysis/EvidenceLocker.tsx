@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { EvidenceRecord } from '../../types/email';
-import { FileCheck, ShieldCheck, Download, Copy, Check, Lock, History } from 'lucide-react';
+import { ShieldCheck, Download, Copy, Check, Lock, History } from 'lucide-react';
 
 interface EvidenceLockerProps {
   evidence: EvidenceRecord;

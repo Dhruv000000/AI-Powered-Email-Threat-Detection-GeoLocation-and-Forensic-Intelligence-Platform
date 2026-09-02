@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = Field(
-        default="postgresql+psycopg2://postgres:postgres@localhost:5432/aegis_db",
-        description="PostgreSQL Connection URL"
+        default="sqlite:///./aegis_local_dev.db",
+        description="Database Connection URL (SQLite or PostgreSQL)"
     )
     SQL_ECHO: bool = False
 

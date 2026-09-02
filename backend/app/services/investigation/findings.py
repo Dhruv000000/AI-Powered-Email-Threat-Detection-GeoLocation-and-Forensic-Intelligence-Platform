@@ -198,9 +198,10 @@ class FindingsEngine:
                 self._findings.append({
                     "finding_id": self._make_finding_id("SUSPICIOUS_ATTACHMENT", att_sha[:6]),
                     "investigation_id": self.investigation_id,
+                    "finding_code": "SUSPICIOUS_ATTACHMENT",
                     "reason_code": "SUSPICIOUS_ATTACHMENT",
                     "title": f"High-Risk Attachment Detected ({att.filename})",
-                    "severity": "critical" if att.is_executable else "high",
+                    "severity": "critical" if att.is_executable or att.is_double_extension else "high",
                     "description": (
                         f"Attachment '{att.filename}' exhibits high-risk indicators: {reason_str}. "
                         f"Cryptographic SHA-256 seal: {att_sha}."
@@ -211,7 +212,58 @@ class FindingsEngine:
                     "relationship_ids": rel_ids,
                 })
 
-        # 5. Task 01 ML & Forensic Reasons Integration
+                if att.is_double_extension:
+                    self._findings.append({
+                        "finding_id": self._make_finding_id("SUSPICIOUS_DOUBLE_EXTENSION", att_sha[:6]),
+                        "investigation_id": self.investigation_id,
+                        "finding_code": "SUSPICIOUS_DOUBLE_EXTENSION",
+                        "reason_code": "SUSPICIOUS_DOUBLE_EXTENSION",
+                        "title": f"Deceptive Double-Extension Detected ({att.filename})",
+                        "severity": "critical",
+                        "description": (
+                            f"Attachment '{att.filename}' employs deceptive double extension techniques to disguise executable payloads."
+                        ),
+                        "confidence": 0.98,
+                        "evidence_references": [f"email_attachments:{att.id}"],
+                        "entity_ids": [email_id, att_id, hash_id],
+                        "relationship_ids": rel_ids,
+                    })
+
+        # 5. Routing Anomalies & Impossible Travel Velocity
+        relay_hops = sorted(list(self.analysis.relay_hops or []), key=lambda h: h.hop_number)
+        prev_geo = None
+        for i, hop in enumerate(relay_hops):
+            hop_ip = hop.ip
+            if hop_ip:
+                from app.services.geo.geo_resolver import geo_resolver, GeoResolver
+                geo_dto = geo_resolver.resolve_ip(hop_ip)
+                if prev_geo and prev_geo.latitude is not None and geo_dto.latitude is not None:
+                    dist_km = GeoResolver.calculate_haversine_distance(
+                        prev_geo.latitude, prev_geo.longitude,
+                        geo_dto.latitude, geo_dto.longitude
+                    )
+                    delay_s = hop.delay_seconds if hop.delay_seconds is not None else 0
+                    if 0 <= delay_s < 2.0 and dist_km > 4000.0:
+                        self._findings.append({
+                            "finding_id": self._make_finding_id("IMPOSSIBLE_TRAVEL_VELOCITY", f"hop{hop.hop_number}"),
+                            "investigation_id": self.investigation_id,
+                            "reason_code": "IMPOSSIBLE_TRAVEL_VELOCITY",
+                            "title": "Impossible Travel Velocity Observed",
+                            "severity": "high",
+                            "description": (
+                                f"Non-cloud network transit traversed {dist_km:.0f} km in under 2 seconds ({delay_s:.1f}s) "
+                                f"between Hop #{i} ({prev_geo.country_name}) and Hop #{i+1} ({geo_dto.country_name}), "
+                                f"indicating proxy bouncing, VPN switching, or Tor transit obfuscation."
+                            ),
+                            "confidence": 0.96,
+                            "evidence_references": [f"email_relay_hops:hop_{hop.hop_number}"],
+                            "entity_ids": [email_id] + self._find_entity_ids_by_value(hop_ip),
+                            "relationship_ids": self._find_rel_ids(source_id=email_id, rel_type="RELAYED_THROUGH"),
+                        })
+                if geo_dto.latitude is not None:
+                    prev_geo = geo_dto
+
+        # 6. Task 01 ML & Forensic Reasons Integration
         for reason in self.analysis.reasons:
             code = reason.reason_code
             if code not in [f["reason_code"] for f in self._findings]:

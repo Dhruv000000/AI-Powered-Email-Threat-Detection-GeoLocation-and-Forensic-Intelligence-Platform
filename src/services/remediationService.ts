@@ -3,7 +3,6 @@ import {
   RemediationHistoryResponse,
   RemediationExecuteRequest,
   RemediationBatchRequest,
-  STIXBundle,
 } from '../types/remediation';
 
 const API_BASE = '/api/v1';

@@ -3,7 +3,7 @@ import { ThreatGraphComponent } from '../components/graph/ThreatGraphComponent';
 import { graphService } from '../services/graphService';
 import { GraphData } from '../types/graph';
 import { LoadingState } from '../components/common/LoadingState';
-import { GitFork, Layers, Info } from 'lucide-react';
+import { GitFork } from 'lucide-react';
 
 export const IntelligenceGraphPage: React.FC = () => {
   const [graphData, setGraphData] = useState<GraphData | null>(null);

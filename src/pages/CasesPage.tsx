@@ -3,14 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
   Search,
-  Filter,
   Plus,
   ArrowRight,
-  Shield,
-  Clock,
-  User,
-  Layers,
-  FileCheck,
 } from 'lucide-react';
 import { caseService } from '../services/caseService';
 import { InvestigationCase, CasePriority, CaseStatus } from '../types/case';
@@ -30,25 +24,30 @@ export const CasesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<CaseStatus | 'all'>('all');
   const [selectedPriority, setSelectedPriority] = useState<CasePriority | 'all'>('all');
-
-  const fetchCases = async () => {
-    setLoading(true);
-    const data = await caseService.getCases({
-      searchTerm,
-      status: selectedStatus,
-      priority: selectedPriority,
-    });
-    setCases(data);
-    setLoading(false);
-  };
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    fetchCases();
-  }, [searchTerm, selectedStatus, selectedPriority]);
+    let isMounted = true;
+    async function loadCases() {
+      const data = await caseService.getCases({
+        searchTerm,
+        status: selectedStatus,
+        priority: selectedPriority,
+      });
+      if (isMounted) {
+        setCases(data);
+        setLoading(false);
+      }
+    }
+    loadCases();
+    return () => {
+      isMounted = false;
+    };
+  }, [searchTerm, selectedStatus, selectedPriority, refreshTrigger]);
 
   const handleCreateCase = async (newCaseData: { title: string; description: string; priority: CasePriority }) => {
     const created = await caseService.createCase(newCaseData);
-    fetchCases();
+    setRefreshTrigger((prev) => prev + 1);
     navigate(`/cases/${created.id}`);
   };
 

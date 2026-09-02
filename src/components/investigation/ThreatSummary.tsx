@@ -5,7 +5,6 @@ import {
   GitFork,
   AlertCircle,
   Network,
-  Share2,
   FileSearch,
 } from 'lucide-react';
 import { InvestigationDetail } from '../../types/investigation';
@@ -79,15 +78,21 @@ export const ThreatSummary: React.FC<ThreatSummaryProps> = ({ investigation }) =
           </div>
           <div className="flex items-center justify-between px-2 py-1 rounded bg-[#151E2E] border border-[#1E293B]">
             <span className="text-gray-400">URLs:</span>
-            <strong className="text-amber-400">{entityCounts['URL'] || 0}</strong>
+            <strong className="text-amber-400">
+              {entityCounts['URL'] || 0}
+              {(summary as any)?.high_risk_links ? ` (${(summary as any).high_risk_links} High)` : ''}
+            </strong>
           </div>
           <div className="flex items-center justify-between px-2 py-1 rounded bg-[#151E2E] border border-[#1E293B]">
             <span className="text-gray-400">IPs:</span>
-            <strong className="text-rose-400">{entityCounts['IP'] || 0}</strong>
+            <strong className="text-rose-400">{entityCounts['IP'] || entityCounts['IPAddress'] || 0}</strong>
           </div>
           <div className="flex items-center justify-between px-2 py-1 rounded bg-[#151E2E] border border-[#1E293B]">
-            <span className="text-gray-400">Emails:</span>
-            <strong className="text-blue-400">{entityCounts['EmailAddress'] || 0}</strong>
+            <span className="text-gray-400">Files:</span>
+            <strong className="text-purple-400">
+              {(summary as any)?.attachments_count ?? (entityCounts['File'] || entityCounts['Attachment'] || 0)}
+              {(summary as any)?.malicious_attachments_count ? ` (${(summary as any).malicious_attachments_count} Mal)` : ''}
+            </strong>
           </div>
         </div>
       </div>

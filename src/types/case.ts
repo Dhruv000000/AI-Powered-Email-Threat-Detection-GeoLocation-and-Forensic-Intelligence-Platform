@@ -1,5 +1,3 @@
-import { ThreatSeverity } from './threat';
-
 export type CasePriority = 'critical' | 'high' | 'medium' | 'low';
 export type CaseStatus = 'open' | 'under_investigation' | 'escalated' | 'mitigated' | 'closed';
 

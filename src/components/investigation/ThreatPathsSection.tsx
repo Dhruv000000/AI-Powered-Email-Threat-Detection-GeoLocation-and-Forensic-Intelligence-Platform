@@ -2,9 +2,6 @@ import React from 'react';
 import {
   GitFork,
   ArrowRight,
-  ShieldAlert,
-  Layers,
-  ChevronRight,
   Eye,
   CheckCircle,
 } from 'lucide-react';

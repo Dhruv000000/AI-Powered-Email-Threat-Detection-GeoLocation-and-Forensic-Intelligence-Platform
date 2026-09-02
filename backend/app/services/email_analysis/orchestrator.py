@@ -49,6 +49,7 @@ from app.services.email_analysis.features import FeatureExtractor
 from app.services.email_analysis.classifier import SklearnThreatClassifier
 from app.services.email_analysis.risk_scoring import RiskScoringEngine
 from app.services.email_analysis.explanation import ExplanationEngine
+from app.services.ml.confidence_calculator import calculate_confidence
 
 
 class AnalysisOrchestrator:
@@ -134,7 +135,7 @@ class AnalysisOrchestrator:
             analysis_record.stage = "parsing"
             analysis_record.progress = 25
             self.db.commit()
-            parsed_data: ParsedEmailData = EmailParser.parse_bytes(raw_bytes)
+            parsed_data: ParsedEmailData = EmailParser.parse_bytes(raw_bytes, filename=filename)
 
             # Stage: Analyzing Headers & Relay Chain (40%)
             analysis_record.stage = "analyzing_headers"
@@ -233,6 +234,36 @@ class AnalysisOrchestrator:
             )
 
             predicted_type, ai_confidence, feature_contributions, ml_available = self.classifier.predict(features)
+
+            # Recalibrate detection confidence based on multi-vector evidentiary signals
+            signals_list = []
+            if features.get("lookalike_domain_count", 0) > 0:
+                signals_list.append("lookalike_domain")
+            if features.get("credential_request_score", 0) > 0.2:
+                signals_list.append("credential_request")
+            if features.get("financial_request_score", 0) > 0.2:
+                signals_list.append("financial_request")
+            if features.get("urgency_score", 0) > 0.2:
+                signals_list.append("urgency_language")
+            if features.get("executable_attachment_signal", 0) > 0:
+                signals_list.append("executable_attachment")
+            if features.get("suspicious_attachment_count", 0) > 0:
+                signals_list.append("suspicious_attachment")
+            if features.get("reply_to_mismatch", 0) > 0:
+                signals_list.append("reply_to_mismatch")
+
+            auth_dict = {
+                "spf_pass": auth_results.spf.status == "pass",
+                "spf_result": auth_results.spf.status,
+                "dkim_pass": auth_results.dkim.status == "pass",
+                "dkim_result": auth_results.dkim.status,
+                "dmarc_pass": auth_results.dmarc.status == "pass",
+                "dmarc_result": auth_results.dmarc.status,
+            }
+            route_anomalies = [h.anomaly_reason for h in relay_hops if getattr(h, "is_anomaly", False) and getattr(h, "anomaly_reason", None)]
+            calibrated_conf = calculate_confidence(signals_list, auth_dict, route_anomalies, base_confidence=ai_confidence or 0.70)
+            if predicted_type != "benign":
+                ai_confidence = max(ai_confidence or 0.70, calibrated_conf)
 
             # Stage: Risk Calculation (85%)
             analysis_record.stage = "calculating_risk"

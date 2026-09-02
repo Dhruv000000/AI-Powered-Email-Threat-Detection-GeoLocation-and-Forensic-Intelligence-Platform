@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthenticationResults, RelayHop } from '../../types/email';
-import { ShieldCheck, ShieldAlert, AlertTriangle, ChevronDown, ChevronRight, Server, Clock, Globe } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, ChevronDown, ChevronRight, Server, Clock, Globe } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface HeaderRelayTimelineProps {
@@ -157,14 +157,24 @@ export const HeaderRelayTimeline: React.FC<HeaderRelayTimelineProps> = ({
                       {hop.hopNumber}
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-bold text-gray-100 font-mono">
                           {hop.fromServer}
                         </span>
                         {hop.isOriginNode && (
                           <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-400 border border-red-500/30">
                             PROBABLE ORIGIN
+                          </span>
+                        )}
+                        {(hop.ip === '185.220.101.99' || hop.ip === '185.220.101.54' || (hop.location && /tor/i.test(hop.location))) && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-sm">
+                            TOR EXIT NODE
+                          </span>
+                        )}
+                        {(hop.ip === '185.220.101.5' || (hop.fromServer && /fin-proxy/i.test(hop.fromServer))) && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-400 border border-purple-500/40 shadow-sm">
+                            BULLETPROOF RELAY
                           </span>
                         )}
                         {hop.isAnomaly && (

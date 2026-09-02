@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { GeoLocationCluster } from '../../types/infrastructure';
 import { SeverityBadge } from '../common/SeverityBadge';
-import { MapPin, Server, Filter, ArrowRight, ShieldAlert, X, Eye } from 'lucide-react';
+import { Filter, ArrowRight, X, Eye, Crosshair } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface ThreatMapComponentProps {
@@ -54,6 +54,7 @@ export const ThreatMapComponent: React.FC<ThreatMapComponentProps> = ({
         maxZoom: 12,
         zoomControl: false,
         attributionControl: false,
+        worldCopyJump: true,
       });
 
       L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -81,7 +82,30 @@ export const ThreatMapComponent: React.FC<ThreatMapComponentProps> = ({
       mapInstanceRef.current = map;
     }
 
+    const map = mapInstanceRef.current;
+
+    const timer = setTimeout(() => {
+      if (map) map.invalidateSize();
+    }, 200);
+
+    const handleResize = () => {
+      if (map) map.invalidateSize();
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (mapContainerRef.current && typeof window.ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        if (map) map.invalidateSize();
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) resizeObserver.disconnect();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -203,6 +227,26 @@ export const ThreatMapComponent: React.FC<ThreatMapComponentProps> = ({
       {/* Map + Side Drawer Container */}
       <div className="relative flex-1 min-h-[500px] w-full bg-[#0B1120]">
         <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
+
+        {/* Floating Recenter Map Button */}
+        <div className="absolute top-4 left-4 z-10">
+          <button
+            onClick={() => {
+              const map = mapInstanceRef.current;
+              if (!map || filteredClusters.length === 0) return;
+              map.invalidateSize();
+              const bounds = L.latLngBounds(
+                filteredClusters.map((c) => L.latLng(c.lat, c.lng))
+              );
+              map.fitBounds(bounds, { padding: [60, 60], maxZoom: 6 });
+            }}
+            className="flex items-center gap-1.5 bg-[#0B1120]/90 hover:bg-[#151E2E] backdrop-blur-md px-2.5 py-1.5 rounded-md border border-[#263244] hover:border-blue-500/50 shadow-lg text-xs font-mono text-gray-200 transition-all cursor-pointer group"
+            title="Recenter global threat clusters"
+          >
+            <Crosshair className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+            <span className="font-semibold">Recenter Map</span>
+          </button>
+        </div>
 
         {/* Floating Side Inspector Panel */}
         {activeCluster && (

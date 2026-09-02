@@ -13,9 +13,10 @@ import { CasesPage } from './pages/CasesPage';
 import { CaseDetailsPage } from './pages/CaseDetailsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { authService } from './services/authService';
 
 export function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => authService.isAuthenticated());
 
   return (
     <BrowserRouter>
@@ -31,7 +32,12 @@ export function App() {
           path="/"
           element={
             isAuthenticated ? (
-              <AppShell onLogout={() => setIsAuthenticated(false)} />
+              <AppShell
+                onLogout={() => {
+                  authService.logout();
+                  setIsAuthenticated(false);
+                }}
+              />
             ) : (
               <Navigate to="/login" replace />
             )

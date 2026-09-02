@@ -3,7 +3,7 @@ import { reportService } from '../services/reportService';
 import { caseService } from '../services/caseService';
 import { ForensicReport } from '../types/report';
 import { InvestigationCase } from '../types/case';
-import { FileText, Download, Eye, Shield, Plus, Printer, CheckCircle2 } from 'lucide-react';
+import { FileText, Download, Eye } from 'lucide-react';
 import { CaseReportModal } from '../components/cases/CaseReportModal';
 import { LoadingState } from '../components/common/LoadingState';
 
@@ -61,6 +61,12 @@ export const ReportsPage: React.FC = () => {
       {/* Reports Table */}
       {loading ? (
         <LoadingState message="Loading forensic reports..." />
+      ) : reports.length === 0 ? (
+        <div className="p-12 text-center bg-[#111827] rounded-lg border border-[#263244] text-xs font-mono text-gray-400 space-y-3">
+          <FileText className="w-8 h-8 text-blue-400/50 mx-auto" />
+          <p className="text-gray-300 font-semibold">No forensic reports generated yet.</p>
+          <p className="text-3xs text-gray-500">Ingest and analyze an email or PDF artifact to compile a forensic intelligence dossier.</p>
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[#263244] bg-[#111827]">
           <table className="w-full text-left text-xs border-collapse font-mono">

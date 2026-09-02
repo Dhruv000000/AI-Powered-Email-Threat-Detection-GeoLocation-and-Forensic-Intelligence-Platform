@@ -529,22 +529,50 @@ class EntityBuilder:
                     norm_domain = self.normalize_domain(domain)
                     dom_id = f"domain:{norm_domain}"
                     tld = norm_domain.split(".")[-1] if "." in norm_domain else ""
+                    is_zero_day = bool(is_lookalike) or (u_risk or 0) >= 60
                     self._add_entity(
                         entity_id=dom_id,
                         entity_type="Domain",
                         display_label=norm_domain,
                         normalized_value=norm_domain,
-                        risk_score=u_risk if is_lookalike else None,
-                        severity=u_threat if is_lookalike else None,
+                        risk_score=u_risk if (is_lookalike or is_zero_day) else None,
+                        severity=u_threat if (is_lookalike or is_zero_day) else None,
                         evidence_reference=f"email_urls:{u_id or url_hash}",
                         properties={
                             "domain_name": norm_domain,
                             "is_lookalike": bool(is_lookalike),
+                            "is_zero_day": is_zero_day,
                             "tld": tld,
                             "source_url": norm_url,
                         },
-                        is_suspicious=bool(is_lookalike),
+                        is_suspicious=bool(is_lookalike or is_zero_day),
                     )
+
+                    # Resolve domain host IP for threat graph synchronization (e.g. 198.51.100.25)
+                    from app.services.geo.geo_resolver import geo_resolver
+                    resolved_geo = geo_resolver.resolve_ip(norm_domain)
+                    if resolved_geo and resolved_geo.ip and not resolved_geo.is_bogon:
+                        res_ip_norm, res_v, res_priv = self.normalize_ip(resolved_geo.ip)
+                        if res_ip_norm:
+                            res_ip_id = f"ip:{res_ip_norm}"
+                            self._add_entity(
+                                entity_id=res_ip_id,
+                                entity_type="IPAddress",
+                                display_label=res_ip_norm,
+                                normalized_value=res_ip_norm,
+                                evidence_reference=f"dns_resolution:{norm_domain}",
+                                properties={
+                                    "ip": res_ip_norm,
+                                    "source": "dns_a_record",
+                                    "ip_version": res_v,
+                                    "is_private": res_priv,
+                                    "as_org": resolved_geo.as_org,
+                                    "asn": resolved_geo.asn,
+                                    "country": resolved_geo.country_name,
+                                    "is_target_host": True,
+                                },
+                                is_suspicious=True,
+                            )
 
                 # If URL hostname is an IP
                 if is_ip_based and hostname:

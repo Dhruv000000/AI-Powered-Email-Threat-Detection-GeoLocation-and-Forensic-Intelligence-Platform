@@ -64,11 +64,11 @@ async def analyze_email_file(
 ):
     # 1. Validate file format and size
     filename = file.filename or "uploaded_email.eml"
-    if not (filename.lower().endswith(".eml") or filename.lower().endswith(".msg") or filename.lower().endswith(".txt")):
+    if not (filename.lower().endswith(".eml") or filename.lower().endswith(".msg") or filename.lower().endswith(".txt") or filename.lower().endswith(".pdf")):
         logger.warning(f"Rejected non-email file extension: {filename}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_EMAIL_FILE", "message": "Uploaded file must be a valid .eml or RFC-822 email format."},
+            detail={"code": "INVALID_EMAIL_FILE", "message": "Uploaded file must be a valid .eml, .msg, .txt, or .pdf email format."},
         )
 
     try:
@@ -146,6 +146,16 @@ async def analyze_email_file(
         )
 
 
+from app.services.email.raw_parser import (
+    sanitize_surrogates,
+    clean_surrogates,
+    safe_str_to_bytes,
+    safe_to_bytes,
+    sanitize_raw_email_text,
+    parse_raw_message_safe,
+)
+
+
 @router.post(
     "/analyze-raw",
     response_model=EmailAnalysisResponse,
@@ -158,13 +168,14 @@ def analyze_raw_email(
     current_user: UserProfileSchema = Depends(get_current_user),
     orchestrator: AnalysisOrchestrator = Depends(get_orchestrator),
 ):
-    if not request.raw_content or len(request.raw_content.strip()) == 0:
+    cleaned_content = sanitize_surrogates(request.raw_content)
+    if not cleaned_content or len(cleaned_content.strip()) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "INVALID_EMAIL_PAYLOAD", "message": "Raw email content cannot be empty."},
         )
 
-    raw_bytes = request.raw_content.encode("utf-8")
+    raw_bytes = safe_str_to_bytes(cleaned_content)
     
     if len(raw_bytes) > settings.max_email_size_bytes:
         raise HTTPException(

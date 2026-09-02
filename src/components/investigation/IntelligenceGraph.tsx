@@ -7,16 +7,6 @@ import {
   RefreshCw,
   Search,
   Filter,
-  Layers,
-  Info,
-  Shield,
-  FileCode,
-  Link,
-  Globe,
-  Server,
-  User,
-  Mail,
-  HardDrive,
 } from 'lucide-react';
 import { CytoscapeGraphData, CytoscapeNode, CytoscapeEdge, EntityType } from '../../types/investigation';
 
@@ -104,13 +94,24 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
     );
 
     const elements: cytoscape.ElementDefinition[] = [
-      ...visibleNodes.map((n) => ({
-        group: 'nodes' as const,
-        data: {
-          ...n.data,
-          color: getTypeColor(n.data.type),
-        },
-      })),
+      ...visibleNodes.map((n) => {
+        const isZeroDay =
+          (n.data.type === 'Domain' || n.data.type === 'URL') &&
+          (Boolean((n.data as any).is_zero_day) ||
+            Boolean((n.data as any).is_lookalike) ||
+            ((n.data as any).risk_score != null && (n.data as any).risk_score >= 70) ||
+            /corp-bankofamerica|micros0ft|portal-verification|supplier-invoices/i.test(n.data.label));
+
+        return {
+          group: 'nodes' as const,
+          data: {
+            ...n.data,
+            label: isZeroDay && n.data.type === 'Domain' ? `⚠️ [0-DAY DOMAIN]\n${n.data.label}` : n.data.label,
+            is_zero_day: isZeroDay,
+            color: isZeroDay ? '#DC2626' : getTypeColor(n.data.type),
+          },
+        };
+      }),
       ...visibleEdges.map((e) => ({
         group: 'edges' as const,
         data: {
@@ -158,8 +159,8 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
               'font-family': 'JetBrains Mono, monospace',
               'text-valign': 'bottom',
               'text-margin-y': 8,
-              'text-wrap': 'ellipsis',
-              'text-max-width': '120px',
+              'text-wrap': 'wrap',
+              'text-max-width': '130px',
               'text-background-color': '#0F172A',
               'text-background-opacity': 0.9,
               'text-background-padding': '3px',
@@ -171,6 +172,24 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
               'border-color': '#1E293B',
               'transition-property': 'background-color, border-color, border-width, opacity',
               'transition-duration': 0.2,
+            },
+          },
+          {
+            selector: 'node[?is_zero_day]',
+            style: {
+              'background-color': '#DC2626',
+              'border-color': '#EF4444',
+              'border-width': 4,
+              'border-opacity': 1,
+              color: '#FCA5A5',
+              'font-weight': 'bold',
+              'text-wrap': 'wrap',
+              'text-max-width': '140px',
+              'text-background-color': '#450A0A',
+              'text-background-opacity': 0.95,
+              'text-background-padding': '4px',
+              width: 56,
+              height: 56,
             },
           },
           {
@@ -281,7 +300,7 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
       cy.add(elements);
       cy.layout(getLayoutConfig(layoutName) as any).run();
     }
-  }, [data, selectedTypes, layoutName, searchTerm]);
+  }, [data, selectedTypes, layoutName, searchTerm, onSelectNode, onSelectEdge]);
 
   // Apply finding / path highlights dynamically
   useEffect(() => {
@@ -327,14 +346,14 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
     onSelectEdge(null);
   };
 
-  const allEntityTypes: { type: EntityType; label: string; icon: any }[] = [
-    { type: 'Email', label: 'Email', icon: Mail },
-    { type: 'EmailAddress', label: 'Addresses', icon: User },
-    { type: 'Domain', label: 'Domains', icon: Globe },
-    { type: 'URL', label: 'URLs', icon: Link },
-    { type: 'IP', label: 'IPs', icon: Server },
-    { type: 'Attachment', label: 'Files', icon: HardDrive },
-    { type: 'MailServer', label: 'Relays', icon: Layers },
+  const allEntityTypes: { type: EntityType; label: string }[] = [
+    { type: 'Email', label: 'Email' },
+    { type: 'EmailAddress', label: 'Addresses' },
+    { type: 'Domain', label: 'Domains' },
+    { type: 'URL', label: 'URLs' },
+    { type: 'IP', label: 'IPs' },
+    { type: 'Attachment', label: 'Files' },
+    { type: 'MailServer', label: 'Relays' },
   ];
 
   return (
@@ -368,6 +387,18 @@ export const IntelligenceGraph: React.FC<IntelligenceGraphProps> = ({
 
         {/* Layout & Zoom Controls */}
         <div className="flex items-center gap-2">
+          {/* Quick Search */}
+          <div className="relative flex items-center">
+            <Search className="w-3 h-3 text-gray-400 absolute left-2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-6 pr-2 py-0.5 bg-[#151E2E] border border-[#263244] rounded text-2xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-500 w-24 sm:w-28 font-mono"
+            />
+          </div>
+
           {/* Layout Selector */}
           <select
             value={layoutName}

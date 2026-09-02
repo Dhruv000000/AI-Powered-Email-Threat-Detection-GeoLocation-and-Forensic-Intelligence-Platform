@@ -1,6 +1,6 @@
 import React from 'react';
 import { IPIntelligence, DomainIntelligence } from '../../types/infrastructure';
-import { Server, Globe, ShieldAlert, ArrowUpRight, CheckCircle2, AlertOctagon, HelpCircle } from 'lucide-react';
+import { Server, Globe, ArrowUpRight, HelpCircle } from 'lucide-react';
 import { SeverityBadge } from '../common/SeverityBadge';
 import { useNavigate } from 'react-router-dom';
 

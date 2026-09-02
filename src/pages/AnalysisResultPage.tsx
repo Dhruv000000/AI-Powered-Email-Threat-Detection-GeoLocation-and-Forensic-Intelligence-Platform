@@ -9,15 +9,9 @@ import {
   Server,
   Link2,
   Brain,
-  ShieldCheck,
   MapPin,
   GitFork,
   FileDown,
-  ExternalLink,
-  ChevronRight,
-  HelpCircle,
-  Copy,
-  Check,
 } from 'lucide-react';
 import { emailService } from '../services/emailService';
 import { EmailAnalysis } from '../types/email';
@@ -32,6 +26,7 @@ import { ThreatMapModal } from '../components/investigation/ThreatMapModal';
 import { DFIRReportModal } from '../components/investigation/DFIRReportModal';
 import { ThreatIntelModal } from '../components/investigation/ThreatIntelModal';
 import { LoadingState } from '../components/common/LoadingState';
+import { getSeverityFromScore } from '../utils/severity';
 
 export const AnalysisResultPage: React.FC = () => {
   const { emailId } = useParams<{ emailId: string }>();
@@ -201,13 +196,7 @@ export const AnalysisResultPage: React.FC = () => {
             </span>
             <SeverityBadge
               severity={
-                email.aiAnalysis.riskScore >= 85
-                  ? 'critical'
-                  : email.aiAnalysis.riskScore >= 70
-                  ? 'high'
-                  : email.aiAnalysis.riskScore >= 40
-                  ? 'medium'
-                  : 'clean'
+                getSeverityFromScore(email.aiAnalysis.riskScore).level.toLowerCase() as any
               }
               size="sm"
             />
@@ -216,8 +205,8 @@ export const AnalysisResultPage: React.FC = () => {
           <div className="flex items-center gap-4">
             <RiskScoreGauge score={email.aiAnalysis.riskScore} size="lg" showLabel={false} />
             <div className="space-y-1 font-mono">
-              <span className="text-xs font-bold text-red-400 block uppercase tracking-wide">
-                {email.aiAnalysis.riskScore >= 85 ? 'CRITICAL THREAT' : 'HIGH THREAT'}
+              <span className={`text-xs font-bold block uppercase tracking-wide ${getSeverityFromScore(email.aiAnalysis.riskScore).textClass}`}>
+                {getSeverityFromScore(email.aiAnalysis.riskScore).label}
               </span>
               <p className="text-sm font-bold text-gray-100 font-sans">{email.aiAnalysis.classification}</p>
               <span className="text-2xs text-blue-400 block">AI Confidence: {email.aiAnalysis.confidence}%</span>
@@ -348,12 +337,38 @@ export const AnalysisResultPage: React.FC = () => {
                   <div className="p-3 rounded bg-[#151E2E] border border-[#263244]">
                     <span className="text-2xs uppercase text-gray-400 block">Extracted Links</span>
                     <span className="text-sm font-bold text-blue-400 mt-0.5 block">{email.extractedUrls.length} URLs</span>
-                    <span className="text-2xs text-gray-400">{email.extractedUrls.filter((u) => u.riskScore > 70).length} High Risk</span>
+                    <span className="text-2xs text-gray-400">
+                      {(() => {
+                        const directHighRisk = email.extractedUrls.filter(
+                          (u) =>
+                            (u.riskScore ?? 0) >= 50 ||
+                            u.threatLevel === 'high' ||
+                            u.threatLevel === 'critical' ||
+                            (u.threatLevel as string) === 'suspicious' ||
+                            u.isLookalike ||
+                            u.isIpBased
+                        ).length;
+                        const hasAnomaly = email.aiAnalysis.flaggedReasons.some((r) =>
+                          /url|link|domain|harvest|phish/i.test(r)
+                        );
+                        const count = directHighRisk > 0 ? directHighRisk : hasAnomaly && email.extractedUrls.length > 0 ? 1 : 0;
+                        return `${count} High Risk`;
+                      })()}
+                    </span>
                   </div>
                   <div className="p-3 rounded bg-[#151E2E] border border-[#263244]">
                     <span className="text-2xs uppercase text-gray-400 block">Attachments</span>
                     <span className="text-sm font-bold text-purple-400 mt-0.5 block">{email.attachments.length} files</span>
-                    <span className="text-2xs text-gray-400">{email.attachments.filter((a) => a.isMalicious).length} Malicious</span>
+                    <span className="text-2xs text-gray-400">
+                      {(() => {
+                        const directMalicious = email.attachments.filter((a) => a.isMalicious).length;
+                        const hasAnomaly = email.aiAnalysis.flaggedReasons.some((r) =>
+                          /attachment|extension|executable|payload|vbs|malware/i.test(r)
+                        );
+                        const count = directMalicious > 0 ? directMalicious : hasAnomaly && email.attachments.length > 0 ? 1 : 0;
+                        return `${count} Malicious`;
+                      })()}
+                    </span>
                   </div>
                 </div>
 

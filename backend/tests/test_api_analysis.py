@@ -97,3 +97,35 @@ def test_malformed_email_payload(client):
     assert response.status_code == 400
     assert "error" in response.json()
     assert response.json()["error"]["code"] == "INVALID_EMAIL_PAYLOAD"
+
+def test_surrogate_utf8_sanitization(client):
+    import json
+    # Test surrogate characters that would typically cause UnicodeEncodeError on raw strings
+    surrogate_payload = "From: attacker@example.com\nSubject: Test \ud83d Urgent\n\nBody with surrogate \ud800 and \udfff characters."
+    json_bytes = json.dumps({"raw_content": surrogate_payload}, ensure_ascii=True).encode("utf-8")
+    response = client.post(
+        "/api/v1/email-analysis/analyze-raw",
+        content=json_bytes,
+        headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "analysis_id" in data
+
+
+def test_sanitize_surrogates_and_safe_bytes_helper():
+    from app.services.email.raw_parser import sanitize_surrogates, safe_str_to_bytes, safe_to_bytes
+    text_with_surrogates = "Hello \ud800 World \udfff !"
+    cleaned = sanitize_surrogates(text_with_surrogates)
+    assert "\ud800" not in cleaned
+    assert "\udfff" not in cleaned
+    assert cleaned == "Hello  World  !"
+
+    b1 = safe_str_to_bytes(text_with_surrogates)
+    assert isinstance(b1, bytes)
+    assert b1.decode("utf-8") == "Hello  World  !"
+
+    b2 = safe_to_bytes(text_with_surrogates)
+    assert isinstance(b2, bytes)
+
+

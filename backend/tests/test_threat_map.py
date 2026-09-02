@@ -278,3 +278,101 @@ def test_3_hop_multi_continent_threat_map(client, db_session):
     # Verify total transit distance
     assert data["total_distance_km"] > 18000.0  # Europe to Asia to Europe > 18,000 km
     assert any("Multi-national routing" in a for a in data["anomalies"])
+
+
+def test_nigeria_mtn_as29465_lookup_and_subnet():
+    # Exact IP
+    dto_exact = geo_resolver.resolve_ip("105.112.44.180")
+    assert dto_exact.country_code == "NG"
+    assert dto_exact.country_name == "Nigeria"
+    assert dto_exact.city == "Lagos"
+    assert dto_exact.asn == 29465
+    assert "MTN NIGERIA" in (dto_exact.as_org or "")
+
+    # Subnet IP in 105.112.0.0/16
+    dto_subnet = geo_resolver.resolve_ip("105.112.99.200")
+    assert dto_subnet.country_code == "NG"
+    assert dto_subnet.country_name == "Nigeria"
+    assert dto_subnet.asn == 29465
+
+
+def test_threat_map_3hop_loop_and_severity_binding(client, db_session):
+    analysis_id = "ANL-3HOP-LOOP-001"
+    analysis = EmailAnalysisModel(
+        analysis_id=analysis_id,
+        filename="bec_phish.eml",
+        sha256="bec3hop1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        status="completed",
+        threat_type="phishing",
+        risk_score=92,
+        severity="critical",
+    )
+    analysis.metadata_record = EmailMetadataModel(
+        analysis_id=analysis_id,
+        from_email="billing@secure-portal.com",
+        subject="Action Required: Verify Account",
+    )
+    # Hop 1: Nigeria MTN -> Hop 2: Tor / Fin-Proxy Germany
+    analysis.relay_hops = [
+        EmailRelayHopModel(
+            analysis_id=analysis_id,
+            hop_number=1,
+            from_server="mtn-lagos-node.net",
+            by_server="mail.secure-portal.com",
+            ip="105.112.44.180",
+            protocol="ESMTP",
+            delay_seconds=0,
+            is_origin_node=True,
+            raw_header="Received: from mtn-lagos-node.net (105.112.44.180) by mail.secure-portal.com",
+        ),
+        EmailRelayHopModel(
+            analysis_id=analysis_id,
+            hop_number=2,
+            from_server="mail.secure-portal.com",
+            by_server="relay-eu-central.fin-proxy.de",
+            ip="185.220.101.5",
+            protocol="ESMTP",
+            delay_seconds=1,
+            is_origin_node=False,
+            raw_header="Received: from mail.secure-portal.com (185.220.101.5) by relay-eu-central.fin-proxy.de",
+        ),
+    ]
+    # URL pointing to portal-verification-service-auth.com
+    from app.db.models.email_analysis import EmailUrlModel
+    analysis.urls = [
+        EmailUrlModel(
+            analysis_id=analysis_id,
+            original_url="https://portal-verification-service-auth.com/login",
+            normalized_url="https://portal-verification-service-auth.com/login",
+            domain="portal-verification-service-auth.com",
+            risk_score=95,
+            threat_level="critical",
+            is_lookalike=True,
+        )
+    ]
+    db_session.add(analysis)
+    db_session.commit()
+
+    res = client.get(f"/api/v1/investigations/{analysis_id}/threat-map")
+    assert res.status_code == 200
+    data = res.json()
+
+    # Verify 3-Hop Geospatial Loop: Origin -> Relay -> Target Host
+    assert len(data["hops"]) == 3
+    assert data["severity"] == "critical"
+    assert data["risk_score"] == 92
+
+    # Hop 1: Nigeria
+    assert data["hops"][0]["ip"] == "105.112.44.180"
+    assert data["hops"][0]["location"]["country_name"] == "Nigeria"
+    assert data["hops"][0]["is_origin"] is True
+
+    # Hop 2: Transit Relay
+    assert data["hops"][1]["ip"] == "185.220.101.5"
+    assert data["hops"][1]["location"]["country_name"] == "Germany"
+
+    # Hop 3: Terminal Target Host
+    assert data["hops"][2]["hostname"] == "portal-verification-service-auth.com"
+    assert data["hops"][2]["is_destination"] is True
+    assert data["hops"][2]["is_target"] is True
+
