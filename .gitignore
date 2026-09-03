@@ -24,8 +24,10 @@ dist-ssr/
 # Databases & Storage
 *.sqlite3
 *.db
-backend/storage/emails/
-storage/
+/storage/
+/backend/storage/
+!backend/app/storage/
+!backend/app/storage/*.py
 
 # IDE & OS
 .vscode/
