@@ -1,3 +1,5 @@
+import { API_BASE_URL } from './apiClient';
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ export interface AuthTokens {
 
 const TOKEN_KEY = 'aegis_auth_token';
 const USER_KEY = 'aegis_user_profile';
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 class AuthService {
   private token: string | null = null;
@@ -58,7 +61,7 @@ class AuthService {
 
   async login(email: string, password: string): Promise<UserProfile> {
     try {
-      const res = await fetch('/api/v1/auth/login', {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -74,7 +77,7 @@ class AuthService {
       localStorage.setItem(TOKEN_KEY, tokenData.access_token);
 
       // Fetch user profile
-      const profileRes = await fetch('/api/v1/auth/me', {
+      const profileRes = await fetch(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
 

@@ -6,8 +6,9 @@ import {
   EntityDetail,
   ThreatPath,
 } from '../types/investigation';
+import { API_BASE_URL } from './apiClient';
 
-const API_BASE = '/api/v1/investigations';
+const API_BASE = `${API_BASE_URL}/api/v1/investigations`;
 
 class InvestigationService {
   private getHeaders(): HeadersInit {

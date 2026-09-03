@@ -1,9 +1,35 @@
 import { EmailAnalysis } from '../types/email';
+import { API_BASE_URL } from './apiClient';
 
-const API_BASE = '/api/v1/email-analysis';
+const API_BASE = `${API_BASE_URL}/api/v1/email-analysis`;
+const STORAGE_KEY = 'aegis_analyzed_emails';
 
 class EmailService {
   private emails: EmailAnalysis[] = [];
+
+  constructor() {
+    this._loadFromStorage();
+  }
+
+  private _loadFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        this.emails = JSON.parse(stored);
+      }
+    } catch (e) {
+      console.warn('[EmailService] Failed to load cached emails from storage:', e);
+      this.emails = [];
+    }
+  }
+
+  private _saveToStorage(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.emails));
+    } catch (e) {
+      console.warn('[EmailService] Failed to save emails to storage:', e);
+    }
+  }
 
   private getHeaders(): HeadersInit {
     return {
@@ -13,6 +39,31 @@ class EmailService {
   }
 
   async getEmails(): Promise<EmailAnalysis[]> {
+    // 1. Fetch live analyses list from backend
+    try {
+      const response = await fetch(API_BASE, {
+        headers: this.getHeaders(),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const items = data.items || [];
+        if (Array.isArray(items) && items.length > 0) {
+          const mappedList: EmailAnalysis[] = items.map((dto: any) => this._mapBackendResponseToUI(dto));
+          const mergedMap = new Map<string, EmailAnalysis>();
+          mappedList.forEach((e) => mergedMap.set(e.id, e));
+          this.emails.forEach((e) => {
+            if (!mergedMap.has(e.id)) {
+              mergedMap.set(e.id, e);
+            }
+          });
+          this.emails = Array.from(mergedMap.values());
+          this._saveToStorage();
+        }
+      }
+    } catch (e) {
+      console.warn('[EmailService] Backend list unavailable, serving persisted cache:', e);
+    }
+
     return [...this.emails];
   }
 
@@ -31,13 +82,14 @@ class EmailService {
         } else {
           this.emails.unshift(mapped);
         }
+        this._saveToStorage();
         return mapped;
       }
     } catch (e) {
       console.warn(`[EmailService] Failed to load email by ID from backend:`, e);
     }
 
-    // 2. Check local in-memory analyzed cache if offline / previously analyzed
+    // 2. Check local in-memory/persisted analyzed cache if offline / previously analyzed
     const cached = this.emails.find((e) => e.id === id || e.evidenceId === id);
     if (cached) {
       return { ...cached };
@@ -69,6 +121,7 @@ class EmailService {
       const backendDto = await response.json();
       const mapped = this._mapBackendResponseToUI(backendDto);
       this.emails.unshift(mapped);
+      this._saveToStorage();
       return mapped;
     } catch (err: any) {
       console.error(`[EmailService] Upload failed:`, err);
@@ -78,24 +131,49 @@ class EmailService {
 
   async parseEmailRaw(rawContent: string, fileName = 'uploaded-email.eml'): Promise<EmailAnalysis> {
     try {
-      const response = await fetch(`${API_BASE}/analyze-raw`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          raw_content: rawContent,
-          filename: fileName,
-          force_reanalysis: true,
-        }),
-      });
+      let response: Response | null = null;
+      let lastError: any = null;
 
-      if (!response.ok) {
+      // Handle transient proxy 502/504 hiccups or cold boots with a single automatic retry
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          response = await fetch(`${API_BASE}/analyze-raw`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+              raw_content: rawContent,
+              filename: fileName,
+              force_reanalysis: true,
+            }),
+          });
+
+          if (response.ok || (response.status !== 502 && response.status !== 503 && response.status !== 504)) {
+            break;
+          }
+        } catch (fetchErr) {
+          lastError = fetchErr;
+        }
+
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+      }
+
+      if (!response || !response.ok) {
+        if (!response) throw lastError || new Error('Network timeout or backend unreachable');
         const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.detail?.message || errJson.error?.message || `Analysis failed (${response.status}). Please try again.`);
+        const msg =
+          errJson.error?.message ||
+          errJson.detail?.message ||
+          (typeof errJson.detail === 'string' ? errJson.detail : null) ||
+          (response.status === 502 ? 'Bad Gateway (502) — Analysis engine worker was initializing. Please retry.' : `Analysis failed (${response.status}). Please try again.`);
+        throw new Error(msg);
       }
 
       const backendDto = await response.json();
       const mapped = this._mapBackendResponseToUI(backendDto, rawContent);
       this.emails.unshift(mapped);
+      this._saveToStorage();
       return mapped;
     } catch (err: any) {
       console.error(`[EmailService] Raw parse failed:`, err);

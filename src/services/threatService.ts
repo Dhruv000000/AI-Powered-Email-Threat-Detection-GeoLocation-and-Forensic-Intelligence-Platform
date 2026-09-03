@@ -1,7 +1,9 @@
 import { ThreatRecord, ThreatSeverity, ThreatType, ThreatStatus } from '../types/threat';
 import { ensureArray } from '../utils/array';
+import { API_BASE_URL } from './apiClient';
 
-const API_BASE = '/api/v1/investigations';
+const API_BASE = `${API_BASE_URL}/api/v1/investigations`;
+const STORAGE_THREATS_KEY = 'aegis_cached_threats';
 
 export interface ThreatFilterParams {
   searchTerm?: string;
@@ -19,51 +21,71 @@ class ThreatService {
     };
   }
 
+  private _getCachedThreats(): ThreatRecord[] {
+    try {
+      const stored = localStorage.getItem(STORAGE_THREATS_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  }
+
   async getThreats(filters?: ThreatFilterParams): Promise<ThreatRecord[]> {
+    let result: ThreatRecord[] = [];
+
     try {
       const response = await fetch(API_BASE, {
         headers: this.getHeaders(),
       });
 
       if (!response.ok) {
-        console.warn(`[ThreatService] Failed to load investigations: ${response.status}`);
-        return [];
+        console.warn(`[ThreatService] Failed to load investigations (${response.status}), falling back to cache`);
+        result = this._getCachedThreats();
+      } else {
+        const data: any = await response.json();
+        const list = ensureArray(data, ['threats', 'investigations']);
+
+        result = list.map((item) => {
+          const sev = (item.severity?.toLowerCase() || 'medium') as ThreatSeverity;
+          const tt = (item.threat_type || 'Phishing') as ThreatType;
+          const risk = item.risk_score || 0;
+          const sender = item.sender || item.created_by || 'RFC 822 Ingest Stream';
+          const senderDomain = sender.includes('@') ? sender.split('@')[1] : 'forensic-ingest.local';
+
+          return {
+            id: item.investigation_id,
+            emailId: item.analysis_id,
+            subject: item.subject || `Forensic Threat Artifact: ${item.analysis_id}`,
+            sender: sender,
+            senderDomain: senderDomain,
+            threatType: tt,
+            severity: sev,
+            riskScore: risk,
+            confidence: Math.round((item.ai_confidence || 0.85) * 100),
+            status: (item.status === 'completed' ? 'active' : item.status) as ThreatStatus,
+            detectedAt: item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now',
+            probableOriginCountry: item.probable_origin_country || 'Global Ingest',
+            probableOriginCity: item.probable_origin_city || 'Origin Relay',
+            probableOriginIp: item.probable_origin_ip || 'MTA Relay Hop',
+            primaryReason: item.primary_reason || `${item.threat_type || 'Suspicious payload'} signals identified`,
+            indicatorsCount: {
+              urls: item.entity_count ? Math.max(1, Math.floor(item.entity_count / 3)) : 1,
+              ips: 1,
+              domains: 1,
+              attachments: 0,
+            },
+          };
+        });
+
+        if (result.length > 0) {
+          try {
+            localStorage.setItem(STORAGE_THREATS_KEY, JSON.stringify(result));
+          } catch {}
+        }
       }
 
-      const data: any = await response.json();
-      const list = ensureArray(data, ['threats', 'investigations']);
-
-      let result: ThreatRecord[] = list.map((item) => {
-        const sev = (item.severity?.toLowerCase() || 'medium') as ThreatSeverity;
-        const tt = (item.threat_type || 'Phishing') as ThreatType;
-        const risk = item.risk_score || 0;
-        const sender = item.sender || item.created_by || 'RFC 822 Ingest Stream';
-        const senderDomain = sender.includes('@') ? sender.split('@')[1] : 'forensic-ingest.local';
-
-        return {
-          id: item.investigation_id,
-          emailId: item.analysis_id,
-          subject: item.subject || `Forensic Threat Artifact: ${item.analysis_id}`,
-          sender: sender,
-          senderDomain: senderDomain,
-          threatType: tt,
-          severity: sev,
-          riskScore: risk,
-          confidence: Math.round((item.ai_confidence || 0.85) * 100),
-          status: (item.status === 'completed' ? 'active' : item.status) as ThreatStatus,
-          detectedAt: item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now',
-          probableOriginCountry: item.probable_origin_country || 'Global Ingest',
-          probableOriginCity: item.probable_origin_city || 'Origin Relay',
-          probableOriginIp: item.probable_origin_ip || 'MTA Relay Hop',
-          primaryReason: item.primary_reason || `${item.threat_type || 'Suspicious payload'} signals identified`,
-          indicatorsCount: {
-            urls: item.entity_count ? Math.max(1, Math.floor(item.entity_count / 3)) : 1,
-            ips: 1,
-            domains: 1,
-            attachments: 0,
-          },
-        };
-      });
+      if (result.length === 0) {
+        result = this._getCachedThreats();
+      }
 
       if (!filters) return result;
 
@@ -93,8 +115,8 @@ class ThreatService {
 
       return result;
     } catch (err) {
-      console.error('[ThreatService] Error loading threats:', err);
-      return [];
+      console.warn('[ThreatService] Error loading threats, serving cached store:', err);
+      return this._getCachedThreats();
     }
   }
 

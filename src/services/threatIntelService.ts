@@ -3,8 +3,9 @@ import {
   SandboxReport,
   EnrichedInvestigation,
 } from '../types/threatIntel';
+import { API_BASE_URL } from './apiClient';
 
-const API_BASE = '/api/v1';
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 export const threatIntelService = {
   /**

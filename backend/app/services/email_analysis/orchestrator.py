@@ -521,9 +521,12 @@ class AnalysisOrchestrator:
 
         except Exception as e:
             self.db.rollback()
-            analysis_record.status = "failed"
-            analysis_record.error_message = str(e)
-            self.db.commit()
+            try:
+                analysis_record.status = "failed"
+                analysis_record.error_message = str(e)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
             logger.error(
                 f"DFIR pipeline failed on {analysis_id}: {e}",
                 extra={"analysis_id": analysis_id, "status": "failed"}

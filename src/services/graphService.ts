@@ -1,5 +1,9 @@
 import { GraphData, GraphFilterOptions, GraphNode, GraphEdge, NodeType, EdgeType } from '../types/graph';
 import { ThreatSeverity } from '../types/threat';
+import { ensureArray } from '../utils/array';
+import { API_BASE_URL } from './apiClient';
+
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 class GraphService {
   private getHeaders(): HeadersInit {
@@ -12,9 +16,10 @@ class GraphService {
   async getGraphData(filters?: GraphFilterOptions): Promise<GraphData> {
     try {
       // 1. Fetch live investigations from backend
-      const invRes = await fetch('/api/v1/investigations', { headers: this.getHeaders() });
+      const invRes = await fetch(`${API_BASE}/investigations`, { headers: this.getHeaders() });
       if (!invRes.ok) return { nodes: [], edges: [] };
-      const investigations: any[] = await invRes.json();
+      const rawData = await invRes.json();
+      const investigations: any[] = ensureArray(rawData, ['items', 'investigations']);
       if (!investigations || investigations.length === 0) return { nodes: [], edges: [] };
 
       // 2. Fetch graph for top active investigations
@@ -24,7 +29,7 @@ class GraphService {
       await Promise.all(
         investigations.slice(0, 5).map(async (inv) => {
           try {
-            const graphRes = await fetch(`/api/v1/investigations/${inv.investigation_id}/graph?max_nodes=100&max_edges=200`, {
+            const graphRes = await fetch(`${API_BASE}/investigations/${inv.investigation_id}/graph?max_nodes=100&max_edges=200`, {
               headers: this.getHeaders(),
             });
             if (graphRes.ok) {

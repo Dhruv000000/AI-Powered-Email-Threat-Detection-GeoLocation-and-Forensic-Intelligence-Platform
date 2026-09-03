@@ -33,6 +33,31 @@ from app.workers.email_worker import enqueue_analysis_job
 router = APIRouter(prefix="/email-analysis", tags=["Email Threat Analysis Engine"])
 
 
+@router.get(
+    "",
+    response_model=Dict[str, Any],
+    summary="List Analyzed Emails",
+    description="Retrieves a list of all persisted email threat analyses.",
+)
+def list_email_analyses(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: UserProfileSchema = Depends(get_current_user),
+    orchestrator: AnalysisOrchestrator = Depends(get_orchestrator),
+    db: Session = Depends(get_db),
+):
+    query = select(EmailAnalysisModel).order_by(EmailAnalysisModel.started_at.desc())
+    records = db.execute(query.offset(offset).limit(limit)).scalars().all()
+    total = db.query(EmailAnalysisModel).count()
+    items = [orchestrator.build_response_dto(r) for r in records]
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items,
+    }
+
+
 @router.post(
     "/analyze",
     response_model=EmailAnalysisResponse,
@@ -156,6 +181,12 @@ from app.services.email.raw_parser import (
 )
 
 
+import anyio
+import logging
+
+analysis_logger = logging.getLogger("aegis.analysis")
+
+
 @router.post(
     "/analyze-raw",
     response_model=EmailAnalysisResponse,
@@ -163,46 +194,53 @@ from app.services.email.raw_parser import (
     summary="Analyze Raw RFC-822 Text Content",
     description="Analyzes pasted raw RFC-822 MIME headers and message body using the standard Python email parser.",
 )
-def analyze_raw_email(
+async def analyze_raw_email(
     request: RawEmailAnalysisRequest,
     current_user: UserProfileSchema = Depends(get_current_user),
     orchestrator: AnalysisOrchestrator = Depends(get_orchestrator),
+    db: Session = Depends(get_db),
 ):
-    cleaned_content = sanitize_surrogates(request.raw_content)
-    if not cleaned_content or len(cleaned_content.strip()) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_EMAIL_PAYLOAD", "message": "Raw email content cannot be empty."},
-        )
-
-    raw_bytes = safe_str_to_bytes(cleaned_content)
-    
-    if len(raw_bytes) > settings.max_email_size_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail={
-                "code": "EMAIL_TOO_LARGE",
-                "message": f"Payload size exceeds maximum allowed {settings.MAX_EMAIL_SIZE_MB} MB.",
-            },
-        )
-
     try:
-        result = orchestrator.process_email(
-            raw_bytes=raw_bytes,
-            filename=request.filename or "raw_pasted_email.eml",
-            force_reanalysis=request.force_reanalysis
+        cleaned_content = sanitize_surrogates(request.raw_content)
+        if not cleaned_content or len(cleaned_content.strip()) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_EMAIL_PAYLOAD", "message": "Raw email content cannot be empty."},
+            )
+
+        raw_bytes = safe_str_to_bytes(cleaned_content)
+        
+        if len(raw_bytes) > settings.max_email_size_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "code": "EMAIL_TOO_LARGE",
+                    "message": f"Payload size exceeds maximum allowed {settings.MAX_EMAIL_SIZE_MB} MB.",
+                },
+            )
+
+        # Offload synchronous CPU/DB pipeline to worker thread to prevent event-loop stalls & proxy dropouts
+        result = await anyio.to_thread.run_sync(
+            lambda: orchestrator.process_email(
+                raw_bytes=raw_bytes,
+                filename=request.filename or "raw_pasted_email.eml",
+                force_reanalysis=request.force_reanalysis,
+            )
         )
         return result
+    except HTTPException:
+        raise
     except ValueError as ve:
+        analysis_logger.warning(f"Raw email payload validation failed: {ve}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "INVALID_EMAIL_PAYLOAD", "message": str(ve)},
         )
-    except Exception as e:
-        logger.error(f"Raw analysis exception: {e}")
+    except Exception as exc:
+        analysis_logger.exception("Raw email analysis failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "ANALYSIS_ERROR", "message": "Failed to analyze raw email content."},
+            detail=f"Analysis pipeline error: {str(exc)}",
         )
 
 

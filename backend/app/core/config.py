@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = Field(
-        default="sqlite:///./aegis_local_dev.db",
+        default="sqlite:///./aegis.db",
         description="Database Connection URL (SQLite or PostgreSQL)"
     )
     SQL_ECHO: bool = False

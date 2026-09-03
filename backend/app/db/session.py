@@ -12,6 +12,11 @@ def get_engine():
     db_url = getattr(settings, "DATABASE_URL", "sqlite:///./aegis.db")
     sql_echo = getattr(settings, "SQL_ECHO", False)
 
+    # Ensure the database is NEVER in-memory SQLite to prevent data loss across restarts/logouts
+    if ":memory:" in db_url:
+        logger.warning("Detected ephemeral in-memory SQLite configuration! Forcing persistent 'sqlite:///./aegis.db'")
+        db_url = "sqlite:///./aegis.db"
+
     try:
         if db_url.startswith("sqlite"):
             engine = create_engine(
@@ -33,8 +38,8 @@ def get_engine():
                 pass
         return engine
     except Exception as e:
-        logger.warning(f"Failed to initialize primary database ({db_url}): {e}. Falling back to local SQLite.")
-        fallback_url = "sqlite:///./aegis_local_dev.db"
+        logger.warning(f"Failed to initialize primary database ({db_url}): {e}. Falling back to persistent local SQLite.")
+        fallback_url = "sqlite:///./aegis.db"
         engine = create_engine(
             fallback_url,
             connect_args={"check_same_thread": False},

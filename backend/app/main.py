@@ -1,5 +1,9 @@
 import sys
+import socket
 from pathlib import Path
+
+# Enforce global socket default timeout to prevent hanging connections or worker freezes
+socket.setdefaulttimeout(3.0)
 
 # Ensure backend and root directories are in sys.path
 _current_file = Path(__file__).resolve()
@@ -58,8 +62,11 @@ app = FastAPI(
 )
 
 # CORS Middleware
-origins = [
-    settings.FRONTEND_URL,
+raw_origins = [settings.FRONTEND_URL] if settings.FRONTEND_URL else []
+if "," in settings.FRONTEND_URL:
+    raw_origins = [o.strip() for o in settings.FRONTEND_URL.split(",") if o.strip()]
+
+dev_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
@@ -72,9 +79,12 @@ origins = [
     "http://127.0.0.1:8000",
 ]
 
+origins = list(dict.fromkeys(raw_origins + dev_origins))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,5 +1,9 @@
 import { IPIntelligence, DomainIntelligence, GeoLocationCluster } from '../types/infrastructure';
+import { ensureArray } from '../utils/array';
 import { threatMapService } from './threatMapService';
+import { API_BASE_URL } from './apiClient';
+
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 class IntelService {
   private getHeaders(): HeadersInit {
@@ -11,9 +15,10 @@ class IntelService {
 
   async getGeoClusters(filters?: { country?: string; severity?: string }): Promise<GeoLocationCluster[]> {
     try {
-      const invRes = await fetch('/api/v1/investigations', { headers: this.getHeaders() });
+      const invRes = await fetch(`${API_BASE}/investigations`, { headers: this.getHeaders() });
       if (!invRes.ok) return [];
-      const investigations: any[] = await invRes.json();
+      const rawData = await invRes.json();
+      const investigations: any[] = ensureArray(rawData, ['items', 'investigations']);
       if (!investigations || investigations.length === 0) return [];
 
       const clustersMap: Record<string, GeoLocationCluster> = {};
@@ -87,7 +92,7 @@ class IntelService {
 
   async getIpIntel(ip: string): Promise<IPIntelligence | null> {
     try {
-      const res = await fetch(`/api/v1/threat-intel/lookup`, {
+      const res = await fetch(`${API_BASE}/threat-intel/lookup`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ indicator: ip, indicator_type: 'ip' }),
@@ -126,7 +131,7 @@ class IntelService {
 
   async getDomainIntel(domain: string): Promise<DomainIntelligence | null> {
     try {
-      const res = await fetch(`/api/v1/threat-intel/lookup`, {
+      const res = await fetch(`${API_BASE}/threat-intel/lookup`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ indicator: domain, indicator_type: 'domain' }),
